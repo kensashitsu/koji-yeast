@@ -129,7 +129,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v95';   // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v96';   // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -269,8 +269,8 @@ const ASP_MAX   = 1.22;
 const SPIN_DRAG = 0.88;  // 回転の減衰
 // 細胞の中身（顕微鏡写真の粒）：顆粒＋液胞。体に固定＝体が回れば中身も回る
 const GRAN_N    = [5,9];  // 顆粒の数
-const GRAN_A    = 0.20;   // 顆粒の濃さ ★中身の主張はここ
-const VAC_A     = 0.44;   // 液胞（大きく淡い1つ）の濃さ
+const GRAN_A    = 0.34;   // 顆粒の濃さ ★中身の主張はここ（v96：スマホで見えづらい→0.20→0.34）
+const VAC_A     = 0.52;   // 液胞（大きく淡い1つ）の濃さ（v96：0.44→0.52。輪郭も強めて識別しやすく）
 // ブラウン運動：熱でゆらぐ。小さい粒ほど激しく(ゆらぎ∝1/√r)、大きい粒ほど
 // 慣性が効いてなめらかに漂う(時定数∝r²)。液胞と顆粒の動きの差はこれだけで出る
 const BROWN_V   = 0.34;   // r=0.10 の粒の速さ（細胞半径/秒）★ブラウン運動の激しさはここ
@@ -1114,13 +1114,15 @@ function grains(x,y,a,b,rot,sq,arr,hue,amt){
   const m=(a+b)/2;
   for(const q of arr){
     const qx=q.x*a, qy=q.y*b, qr=q.r*m;
-    if(q.v){                                  // 液胞＝大きく淡い
-      g.fillStyle=`hsla(${48+hue} 74% 97% / ${VAC_A*amt})`;
+    if(q.v){                                  // 液胞＝大きく淡い「気泡」。輪郭を効かせて体から浮かせる
+      g.fillStyle=`hsla(${48+hue} 70% 96% / ${VAC_A*amt})`;
       g.beginPath(); g.arc(qx,qy,qr,0,6.2832); g.fill();
-      g.strokeStyle=`hsla(${32+hue} 40% 60% / ${0.16*amt})`;
-      g.lineWidth=Math.max(0.5,qr*0.12); g.stroke();
-    }else{                                    // 顆粒
-      g.fillStyle=`hsla(${34+hue} 48% 56% / ${GRAN_A*amt})`;
+      g.strokeStyle=`hsla(${30+hue} 44% 50% / ${0.34*amt})`;   // ★輪郭を濃く（0.16→0.34）＝液胞のまるい膜がはっきり
+      g.lineWidth=Math.max(0.7,qr*0.15); g.stroke();
+      g.fillStyle=`hsla(0 0% 100% / ${0.5*amt})`;              // 小さなハイライト＝“気泡”らしさで識別しやすく
+      g.beginPath(); g.arc(qx-qr*0.32,qy-qr*0.34,qr*0.24,0,6.2832); g.fill();
+    }else{                                    // 顆粒＝濃いめの粒＋わずかな縁で粒感を出す
+      g.fillStyle=`hsla(${32+hue} 54% 48% / ${GRAN_A*amt})`;   // ★濃く（48%→54%彩度・56%→48%明度）＝小さくても粒と分かる
       g.beginPath(); g.arc(qx,qy,qr,0,6.2832); g.fill();
     }
   }
