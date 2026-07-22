@@ -134,7 +134,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v97';   // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v98';   // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -319,7 +319,7 @@ function resize(){
   elHint.style.top=(top-78)+'px'; elHint.style.bottom='auto'; elHint.style.padding='0';
   elAlc.style.top =(top-46)+'px';
   elCnt.style.top =(bot+20)+'px'; elCnt.style.bottom='auto';
-  elFerment.style.top=(bot+18)+'px';   // 匹数を消して空いたお椀の真下＝発酵中！の点滅を置く
+  elFerment.style.top=(top-78)+'px';   // ★画面上に置く（下は手で隠れる）。ヒントは最初のちぎり後に消える＝発酵中はこの位置が空く
 }
 window.addEventListener('resize',resize);
 // ★iOS Safari：アドレスバーの出入りは window.resize を出さないことがあるが visualViewport.resize は出る＝盤面を追従させる。
