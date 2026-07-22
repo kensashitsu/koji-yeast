@@ -51,8 +51,14 @@
   #res .b{font-size:12px;letter-spacing:.03em;color:#a89c88;margin-top:5px;font-variant-numeric:tabular-nums}
   #res .k{font-size:12.5px;letter-spacing:.02em;color:#5f7fa4;margin:14px auto 0;max-width:17em;
     background:rgba(120,150,190,.12);border-radius:11px;padding:9px 13px;line-height:1.65}
-  #res .a{font-size:11px;font-weight:500;letter-spacing:.1em;color:#bdb19a;margin-top:20px;
-    opacity:0;transition:opacity .45s}
+  #res .btns{margin-top:24px;display:flex;gap:12px;justify-content:center;opacity:0;pointer-events:none;transition:opacity .45s}
+  #res .btns.on{opacity:1;pointer-events:auto}   /* 結果が出そろってから（RESULT_WAIT後）押せる＝振り終わりの指で誤爆しない */
+  #res button{font-family:inherit;font-weight:700;font-size:15px;letter-spacing:.02em;border:none;cursor:pointer;
+    border-radius:12px;padding:13px 26px;transition:transform .07s}
+  #res .again{color:#fff;background:linear-gradient(180deg,#e8b658,#d69a34);box-shadow:0 4px 0 #b07f22}
+  #res .again:active{transform:translateY(2px);box-shadow:0 1px 0 #b07f22}
+  #res .quit{color:#c58a2e;background:transparent;box-shadow:0 0 0 2px #e2ba79 inset}
+  #res .quit:active{transform:translateY(2px)}
   #ver{position:fixed;right:8px;bottom:6px;font-size:10px;letter-spacing:.06em;color:#c4b9a4;pointer-events:none;z-index:9;
     font-variant-numeric:tabular-nums}
   /* ---- タイトル画面（お椀を背景に、その上に重ねる） ---- */
@@ -93,7 +99,8 @@
   <div class="track"><div class="fill" id="alcfill"></div></div></div>
 <div id="cnt">1</div>
 <div id="res"><div class="n">0</div><div class="u">匹</div>
-  <div class="t"></div><div class="b"></div><div class="k"></div><div class="a">タップで もう一度</div></div>
+  <div class="t"></div><div class="b"></div><div class="k"></div>
+  <div class="btns" id="resbtns"><button class="again" id="resagain">もう一度</button><button class="quit" id="resquit">やめる</button></div></div>
 <!-- ★タイトル画面（お椀の上に重なる。はじめる／あそびかた） -->
 <div id="ov">
   <svg class="kun" viewBox="0 0 120 120" width="98" height="98" aria-hidden="true">
@@ -122,7 +129,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v90';   // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v91';   // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -280,6 +287,7 @@ const elAlc=document.getElementById('alc');
 const elOv=document.getElementById('ov'), elCoach=document.getElementById('coach'),
       elCoachTxt=document.getElementById('coachtxt'), elCoachNext=document.getElementById('coachnext');
 let tutMode=false, tutStep=0, tutGoalMet=false, tutCuts=0, tutDeaths=0;   // すべて tutMode ガード＝本番に影響しない
+const TUT_DEATH_STEP=3;   // このステップ(=放置で死ぬ説明)より前は酵母を死なせない（ちぎりを覚えるまで放置で増えない）
 let W=0,H=0,DPR=1,cx=0,cy=0,VR=0,R0=0;
 function resize(){
   DPR=Math.min(2,window.devicePixelRatio||1);
@@ -396,7 +404,7 @@ function finish(lost){
   const bev=bevOf(alc*DEG_MAX);
   elRes.querySelector('.k').textContent=bev.msg||`💡 ${deg}度は ${bev.name}（約${bev.deg}度）くらいの強さ`;
   elRes.style.opacity='1'; elHint.style.opacity='0';
-  elRes.querySelector('.a').style.opacity='0'; resT=0;
+  elRes.querySelector('.btns').classList.remove('on'); resT=0;
   try{ const a=actx(), t=a.currentTime;
     if(lost){                                     // 敗北＝下がる音
       const o=a.createOscillator(), g2=a.createGain();
@@ -418,6 +426,7 @@ function restart(){
   reset(); gas.length=0; deaths.length=0; bits.length=0; rings.length=0; trail.length=0; cutflash.length=0; taps.length=0; threads.length=0;
   runT=0; started=false; finished=false; cut=0; gasAcc=0; alc=0; gameover=false;
   elRes.querySelector('.u').textContent='点';
+  elRes.querySelector('.btns').classList.remove('on');   // ★透明な結果ボタンがプレイ中にタップを奪わないよう解除
   elRes.style.opacity='0'; elHint.style.opacity='1'; elCnt.textContent='1';
 }
 
@@ -459,9 +468,12 @@ function startTutorial(){ try{actx();}catch(e){} elOv.hidden=true; restart();
   if(cells[0]){ cells[0].bud=0.62; }   // すぐに金の首が見えるように芽を進めておく
   showCoach();
 }
+function toTitle(){ tutMode=false; elCoach.hidden=true; restart(); elOv.hidden=false; }   // やめる＝盤面を畳んでタイトル画面へ
 document.getElementById('ovstart').addEventListener('click',startGame);
 document.getElementById('ovtut').addEventListener('click',startTutorial);
 elCoachNext.addEventListener('click',coachNext);
+document.getElementById('resagain').addEventListener('click',()=>{ try{actx();}catch(e){} restart(); });   // もう一度＝すぐ本番へ
+document.getElementById('resquit').addEventListener('click',toTitle);
 
 // ---- 音 ----
 let ac=null;
@@ -612,7 +624,7 @@ function onDown(e){
   //   二重発火（phantom stroke）も防ぐ。マウス（e.touches無し）は素通し＝PCの挙動は不変。
   if(e.touches && e.cancelable) e.preventDefault();
   actx();
-  if(finished){ if(resT>=RESULT_WAIT) restart(); return; }
+  if(finished){ return; }   // 結果画面は「もう一度」「やめる」ボタンで操作（盤面タップでは何もしない＝誤リスタート防止）
   down=true; strokeCuts=0; pt=performance.now(); hist.length=0;
   const [x,y]=pos(e); px=x; py=y; trail.length=0; trail.push({x,y,life:1});
 }
@@ -941,6 +953,9 @@ function step(dt){
     // 熟してからの猶予。使い切ると母細胞ごと死滅
     if(c.bud>=1){
       c.over+=dt;
+      // ★チュートリアル：ちぎりを覚える前(死ぬ説明ステップTUT_DEATH_STEPより前)は死なせない＝放置しても死体が増えない。
+      //   over を危険域(汗0.45/アルコール0.7)未満に頭打ち＝熟した金の首のまま静かに待つ（ちぎれる・でも死なない）。
+      if(tutMode && tutStep<TUT_DEATH_STEP) c.over=Math.min(c.over, win*0.4);
       if(c.over>=win){ die(c,i); continue; }
     }
     // 束は熟すほど頻繁に来る。さらに死が近いほど速まる＝そのまま警告になる
@@ -1448,7 +1463,7 @@ function loop(now){
   if(finished){
     const was=resT; resT+=dt;
     // 受け付け可能になった時に初めて「タップで もう一度」を出す＝押せる合図になる
-    if(was<RESULT_WAIT && resT>=RESULT_WAIT) elRes.querySelector('.a').style.opacity='1';
+    if(was<RESULT_WAIT && resT>=RESULT_WAIT) elRes.querySelector('.btns').classList.add('on');
   }
   step(finished?0:dt); draw(t);   // 時間切れ＝そのまま静止して結果を見せる
   // アルコール度数バーの更新。危険域(0.6超)は寒色テーマのまま点滅（明滅）で注意を促す
