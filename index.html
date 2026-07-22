@@ -146,7 +146,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v104';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v105';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -228,7 +228,7 @@ let   GAS_PER   = 0.045; // 1匹あたり毎秒いくつ泡が生まれるか
 //   下の GAS_* は「基準VR(=GAS_REF_VR)でのpx値」＝ベース。resize()でVRに合わせて縮小する（VR≥基準は等倍＝PC不変）。
 const GAS_REF_VR=360;    // この VR（≒PCの1440×900相当）以上では下の値をそのまま使う
 let   GASK=1;            // 長さのスケール（=min(1,VR/基準)）。resize()で更新
-const GAS_FEED0=700, GAS_RPOP0=150, GAS_DRIFT0=14, GAS_POP0=900, GAS_PUSH0=300;  // ベース値（基準VRでのpx）
+const GAS_FEED0=700, GAS_RPOP0=150, GAS_DRIFT0=14, GAS_POP0=600, GAS_PUSH0=300;  // ベース値（基準VRでのpx）。★v105：破裂キック900→600＝泡が弾けても酵母を飛ばしすぎない（混雑で首が高速に散るのを緩和）
 let   GAS_FEED  = 700;   // 泡がふくらむ速さ（面積 px²/秒）★resize()で GAS_FEED0×GASK² に（面積は長さ²でスケール＝弾ける時間を画面に依らず一定に）
 const GAS_FEED_Y= 0.5;   // 張り付いた酵母1匹あたり、育ちが何割速くなるか
 let   GAS_RPOP  = 150;   // この半径まで育つと耐えきれず弾ける ★resize()で GAS_RPOP0×GASK に（小画面ほど小さく弾ける）
@@ -245,6 +245,8 @@ const GAS_SHAKE = 0.095; // 破裂で画面が揺れる量（泡の半径あた�
 let   GAS_PUSH  = 300;   // 界面に入りきれなかった酵母を押しのける強さ ★resize()で ×GASK
 const CUT_MIN   = 0.55;  // これ未満の芽はちぎれない
 let   NECK_HIT  = 3.2;   // 首の当たり判定倍率。★1.9→3.2＝首の近くを通れば切れる（正確になぞらなくていい）
+let   URGENCY_PULL = 0.6;// ★v105：混雑時、スワイプ範囲内に複数の首があるとき「死にかけ(warn高)」を優先して切る強さ。
+                         //   0=純粋に一番近い首／大きいほど死にそうな首を"近い"扱いにして助けやすくする（死ぬ前に切る＝目的に沿う）。
 // ちぎりの成立条件（なぞり続けて全部切れてしまうのを防ぐ＝一擦り一ちぎり）
 // ★入力＝タップ（ユーザー選択）。スマホで細い首を正確になぞるのはストレスなので、金の首をタップして切る。
 //   1タップ＝1切り（押す＝1回切れる／離して再タップが要る）＝なぞりっぱなし攻略は構造的に不可能。
@@ -271,8 +273,8 @@ const REPEL     = 26;    // 反発の強さ
 // ★酵母の大きさでは水は「粘っこい蜜」で、慣性で飛ぶことは物理的にあり得ない（低レイノルズ数＝
 //   力が働いている間だけ動き、消えたら即止まる）。上限が無いと、泡に張り付いた細胞（反発を受けない）
 //   に周りがめり込んだまま押し合いを続け、泡が弾けて拘束が外れた瞬間に746px/秒で弾け飛ぶ（実測）。
-const VMAX      = 420;   // 酵母が出せる最高速度（px/秒）。破裂の流れに運ばれる時だけここまで出る
-const DRAG      = 0.86;  // 減衰
+const VMAX      = 200;   // 酵母が出せる最高速度（px/秒）。★v105：420→200＝混雑時に首が高速で飛んで切れない対策（破裂キックもこの上限で頭打ち＝動く的を遅く）
+const DRAG      = 0.80;  // 減衰。★v105：0.86→0.80＝ぶつかった勢いを速く鎮める（すぐ止まって狙える）
 const WOB       = 7.0;   // ぷるん の速さ
 // 「ふるふるふる、（間）、ふるふるふる」＝速い小刻みな震えを、束にして間を空けて出す。
 // 母細胞はほぼ静止。震えるのは首を支点にした新芽だけ。
@@ -731,15 +733,19 @@ function slice(ax,ay,bx,by,spd){
   if(ONE_STROKE && strokeCuts>0){ dbg.rej='使い切ったストローク'; return; }
   if(spd<CUT_SPEED){ dbg.rej='遅すぎ'; return; }
   const sx=mx/ml, sy=my/ml;                // 指の進む向き
+  const win=winNow();
   let best=null, bnx=0, bny=0, bd=1e9;
   for(const c of cells){
     if(c.dead || c.bud<CUT_MIN) continue;
-    const a=budAng(c), nd=neckD(c);
+    const a=budAng(c), nd=neckD(c), hit=budR(c)*NECK_HIT;
     const nx=c.x+Math.cos(a)*nd+c.jx, ny=c.y+Math.sin(a)*nd+c.jy;  // ジタバタと同じだけずらす＝見た目と判定が一致
     const d=segDist(nx,ny,ax,ay,bx,by);
-    if(d >= budR(c)*NECK_HIT){ continue; }                       // 首の近くを通ったか（大きめ）
+    if(d >= hit){ continue; }                                    // 首の近くを通ったか（大きめ）
     if(Math.abs(sx*Math.cos(a)+sy*Math.sin(a)) > CUT_PERP){ dbg.rej='向きが違う'; continue; }  // 横切る向きか（ゆるめ）
-    if(d<bd){ bd=d; best=c; bnx=nx; bny=ny; }                    // 一番近い首を選ぶ
+    // ★混雑時：範囲内なら「死にかけ(warn高)」を優先。実効距離＝距離−URGENCY_PULL×warn×当たり半径（死にそうなほど近い扱い）。
+    const warn=Math.min(1,c.over/win);
+    const eff=d - URGENCY_PULL*warn*hit;
+    if(eff<bd){ bd=eff; best=c; bnx=nx; bny=ny; }               // 実効距離が最小の首を選ぶ
   }
   if(best){ split(best,bnx,bny,Math.atan2(sy,sx)); strokeCuts++; dbg.rej=''; }
 }
