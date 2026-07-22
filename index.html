@@ -129,7 +129,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v91';   // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v92';   // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -287,7 +287,8 @@ const elAlc=document.getElementById('alc');
 const elOv=document.getElementById('ov'), elCoach=document.getElementById('coach'),
       elCoachTxt=document.getElementById('coachtxt'), elCoachNext=document.getElementById('coachnext');
 let tutMode=false, tutStep=0, tutGoalMet=false, tutCuts=0, tutDeaths=0;   // すべて tutMode ガード＝本番に影響しない
-const TUT_DEATH_STEP=3;   // このステップ(=放置で死ぬ説明)より前は酵母を死なせない（ちぎりを覚えるまで放置で増えない）
+const TUT_STRESS_STEP=3;  // このステップ(=ストレス/アルコール発酵の説明)から危険域(アルコール・炭酸ガス)を見せる。それより前は静かに待たせる
+const TUT_DEATH_STEP=4;   // このステップ(=放置で死ぬ説明)から死を解禁。発酵ステップの間はストレスは出すが死なせない
 let W=0,H=0,DPR=1,cx=0,cy=0,VR=0,R0=0;
 function resize(){
   DPR=Math.min(2,window.devicePixelRatio||1);
@@ -434,12 +435,13 @@ function restart(){
 // 段階式：各ステップは「文章html」と「達成条件goal」を持つ。goalを満たすと『次へ』が解禁＝順番に体験。
 //   すべて tutMode ガードなので本番ロジック（タイマー・全滅・スコア）には一切影響しない。
 const TUT=[
-  { html:"👀 これが<b>酵母</b>。まわりの<b>ピンクの粒（グルコース君）</b>は残り時間だよ。まずはこのまま読んでね。", goal:null },
-  { html:"酵母のおしりに<b>金色の首（くびれ）</b>ができるよ。そこを<b>ゆびでさっとなぞって</b>ちぎってみよう！", goal:()=>tutCuts>=1 },
+  { html:"👀 これが<b>酵母</b>。まわりの<b>ピンクの粒（グルコース君）</b>は酵母の<b>エサ（グルコース）</b>で、これが<b>残り時間</b>にもなっているよ。まずは読んでね。", goal:null },
+  { html:"酵母は<b>体から芽をふくらませて</b>増えるよ（＝<b>出芽</b>）。芽の根元にできる<b>金色の首（くびれ）</b>を、ゆびで<b>さっとなぞって</b>ちぎってみよう！", goal:()=>tutCuts>=1 },
   { html:"ちぎるたびに<b>酵母が増える</b>！ どんどん首をなぞって<b>増やそう</b>（あと数回）。", goal:()=>tutCuts>=4 },
-  { html:"⚠️ 熟した首を<b>放っておく</b>と、酵母は<b>ぐったり</b>して<b>死んで灰色</b>になっちゃう。1匹わざと<b>放置</b>して見てみよう。", goal:()=>tutDeaths>=1 },
-  { html:"死にかけの酵母は<b>アルコール</b>を出すよ（上のバー）。<b>20度で全滅</b>だから、首は<b>早めに</b>ちぎるのがコツ。", goal:null },
-  { html:"これでバッチリ！🎉 本番は<b>30秒</b>でどこまで増やせるか。<b>生存数が多く</b>・<b>アルコールが低い</b>ほど高得点！", goal:null },
+  { html:"首を<b>放っておく</b>と、酵母は<b>ストレス</b>で弱り、<b>アルコール発酵</b>を始めるよ🍶 <b>アルコール</b>（上のバー）と<b>炭酸ガスの泡</b>を出すんだ（泡は<b>ふくらんで邪魔</b>になる）。しばらく<b>放置</b>して見てみよう。", goal:()=>alc>=0.08 },
+  { html:"それでも放っておくと、酵母は<b>死んで灰色</b>に…（その場に残って<b>場所もふさぐ</b>）。1匹<b>死ぬ</b>のを見てみよう。", goal:()=>tutDeaths>=1 },
+  { html:"終わり方は2つ。<b>アルコール20度で全滅</b>／エサの<b>グルコース（時間）を使い切って終了</b>（＝エネルギー切れで活動できない）。使い切った時に<b>生きている数が多く・アルコールが低い</b>ほど高得点！", goal:null },
+  { html:"これでバッチリ！🎉 本番は<b>30秒</b>の勝負。首は<b>早めに</b>ちぎって、自己ベストを目指そう！", goal:null },
 ];
 function showCoach(){
   const st=TUT[tutStep], last=tutStep>=TUT.length-1, ready=last||!st.goal||tutGoalMet;
@@ -953,9 +955,14 @@ function step(dt){
     // 熟してからの猶予。使い切ると母細胞ごと死滅
     if(c.bud>=1){
       c.over+=dt;
-      // ★チュートリアル：ちぎりを覚える前(死ぬ説明ステップTUT_DEATH_STEPより前)は死なせない＝放置しても死体が増えない。
-      //   over を危険域(汗0.45/アルコール0.7)未満に頭打ち＝熟した金の首のまま静かに待つ（ちぎれる・でも死なない）。
-      if(tutMode && tutStep<TUT_DEATH_STEP) c.over=Math.min(c.over, win*0.4);
+      // ★チュートリアルの2段ガード（本番は無関係）：
+      //   ・発酵の説明(TUT_STRESS_STEP)より前＝危険域に入れない＝汗もアルコールも死も無し（金の首のまま静かに待つ）。
+      //   ・発酵の説明中(〜TUT_DEATH_STEPの手前)＝warn0.95で頭打ち＝ストレス(アルコール/炭酸ガス/汗)は出すが死なせない。
+      //   ・死の説明(TUT_DEATH_STEP)から＝頭打ち解除＝実際に死ぬ。
+      if(tutMode){
+        if(tutStep<TUT_STRESS_STEP)      c.over=Math.min(c.over, win*0.4);
+        else if(tutStep<TUT_DEATH_STEP)  c.over=Math.min(c.over, win*0.95);
+      }
       if(c.over>=win){ die(c,i); continue; }
     }
     // 束は熟すほど頻繁に来る。さらに死が近いほど速まる＝そのまま警告になる
