@@ -146,7 +146,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v107';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）※v107＝v106のコンボ機能を撤回しv105へ戻した版
+const VERSION='v108';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -542,6 +542,35 @@ let ac=null;
 //   actx() はタッチ/クリック（onDown）の中で呼ばれるので、ここで resume すれば確実に音が鳴る。
 function actx(){ if(!ac) ac=new (window.AudioContext||window.webkitAudioContext)();
   if(ac.state==='suspended') ac.resume(); return ac; }
+// ★アルコール上昇中の音＝低く柔らかい「ふつふつ」ドローン（発酵の泡だち）。うるさくないよう常時ではなく
+//   上昇中だけスッと現れ/消える。アルコールが高いほど少しだけ明るく・大きく（でも控えめ）。
+//   持続音は1本のオシレータを鳴らしっぱなしにして音量(gain)だけ滑らかに上下＝クリック無し・iOSでも安定。
+const ferm={osc:null,gain:null,filt:null,lfoG:null};
+function fermInit(){
+  if(ferm.osc || !ac) return;
+  try{
+    const a=ac;
+    const o=a.createOscillator(); o.type='sawtooth'; o.frequency.value=82;          // 低い土台
+    const filt=a.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value=320; filt.Q.value=7; // こもった柔らかさ
+    const g=a.createGain(); g.gain.value=0;                                          // 既定は無音
+    const lfo=a.createOscillator(); lfo.type='sine'; lfo.frequency.value=6.5;        // ふつふつの揺れ
+    const lfoG=a.createGain(); lfoG.gain.value=0;
+    o.connect(filt).connect(g).connect(a.destination);
+    lfo.connect(lfoG).connect(g.gain);                                               // 音量を軽く揺らす＝泡だち感
+    o.start(); lfo.start();
+    ferm.osc=o; ferm.gain=g; ferm.filt=filt; ferm.lfoG=lfoG;
+  }catch(e){}
+}
+function fermSound(active,al){
+  if(!ac) return;
+  if(active) fermInit();
+  if(!ferm.gain) return;
+  const t=ac.currentTime;
+  const vol = active ? (0.035 + 0.05*Math.min(1,al/0.5)) : 0;   // 控えめ。アルコール高いほど少しだけ大きく
+  ferm.gain.gain.setTargetAtTime(vol, t, 0.12);                 // スッとフェード（クリック無し）
+  ferm.filt.frequency.setTargetAtTime(300+al*700, t, 0.2);      // 高いほど少し明るく
+  ferm.lfoG.gain.setTargetAtTime(active?0.02:0, t, 0.12);       // ふつふつの揺れ幅
+}
 // ★ちぎる音＝「ポコッ」（丸い泡）。ユーザーが sound-gallery.html の9候補から6番を選び、
 //   sound6.html で7つのつまみを触って値を確定（base400/sweep4/rise0.08/decay0.16/click0.3/vol1.5/jit3.5）。
 //   物理＝水中の泡がはじける音（ミンナート共鳴。泡が縮むと音が上がる）＝サイン波が base から
@@ -1564,8 +1593,10 @@ function loop(now){
   if(alc>0.6){ const kk=(alc-0.6)/0.4, pl=0.5+0.5*Math.sin(t*(6+kk*12));
     elAlcFill.style.filter=`brightness(${1+0.7*pl})`; }
   else elAlcFill.style.filter='none';
-  // ★発酵中！＝アルコールが上昇している間だけ点滅表示（プレイ中のみ）
-  elFerment.classList.toggle('on', fermentT>0 && started && !finished);
+  // ★発酵中！＝アルコールが上昇している間だけ点滅表示（プレイ中のみ）＋同じ間だけ「ふつふつ」音
+  const fermActive = fermentT>0 && started && !finished;
+  elFerment.classList.toggle('on', fermActive);
+  fermSound(fermActive, alc);
   requestAnimationFrame(loop);
 }
 resize(); reset(); requestAnimationFrame(loop);
@@ -1668,6 +1699,7 @@ window.__dbg={
   } elCnt.textContent=cells.length; },
   ripe(){ for(const c of cells) c.bud=1; },
   tut:()=>({mode:tutMode,step:tutStep,cuts:tutCuts,deaths:tutDeaths,met:tutGoalMet,glu:+tutGluDemo.toFixed(2),stuck:cells.filter(c=>c.stick).length}),
+  fermDbg:()=>({g:ferm.gain?+ferm.gain.gain.value.toFixed(4):null, fermentT:+fermentT.toFixed(2), acState:ac?ac.state:'none'}),
   reset
 };
 })();
