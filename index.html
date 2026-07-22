@@ -1,0 +1,1441 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Ｙースト</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{width:100%;height:100%;
+    /* ★iOS Safari：アドレスバーの伸縮で 100% が実際の可視高さとズレる（下端が隠れる）。
+       100dvh＝動的ビューポート高さ＝バーの出入りに追従。対応外ブラウザは直前の 100% にフォールバック。*/
+    height:100dvh;
+    overflow:hidden;background:#f3eee4;
+    /* ★和文＝ウェイトの揃った角ゴシックを優先（Mac:ヒラギノ角ゴ ProN／Win:游ゴシック Medium）。数字・欧文は system-ui を先頭に。*/
+    font-family:system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic Medium","Yu Gothic","Noto Sans JP",sans-serif;
+    font-feature-settings:"palt" 1;   /* 和文プロポーショナル詰め＝ベタ組みの間延びを解消 */
+    -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;
+    -webkit-text-size-adjust:100%;text-size-adjust:100%;      /* iOS の自動文字拡大を止める（レイアウト崩れ防止）*/
+    -webkit-touch-callout:none;                               /* 長押しでの画像保存メニューを出さない */
+    -webkit-user-select:none;user-select:none;touch-action:none;overscroll-behavior:none}
+  canvas{display:block;width:100%;height:100%}
+  /* 数字は等幅（タブラー）＝変化しても幅がガタつかない */
+  .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1,"palt" 0}
+  #hint{position:fixed;left:0;right:0;top:env(safe-area-inset-top,0);
+    text-align:center;font-size:13.5px;font-weight:500;letter-spacing:.04em;color:#867a66;pointer-events:none;
+    transition:opacity .6s}
+  #cnt{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0) + 12px);transition:transform .09s;
+    text-align:center;font-size:14px;font-weight:500;letter-spacing:.02em;color:#a1937c;pointer-events:none;
+    font-variant-numeric:tabular-nums}
+  /* アルコール度数バー（プレイ中・お椀の上の空きに常設） */
+  #alc{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0) + 42px);
+    width:58%;max-width:280px;pointer-events:none;text-align:center}
+  #alc .lab{font-size:11.5px;font-weight:500;letter-spacing:.05em;color:#5f83a8;margin-bottom:5px}
+  #alc .lab #alcdeg{font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:0}
+  #alc .track{height:7px;border-radius:5px;background:rgba(120,140,165,.16)}
+  #alc .fill{height:100%;width:0%;border-radius:5px;
+    background:linear-gradient(90deg,#a6cbea,#5286bd);transition:width .25s,background .25s}
+  #res{position:fixed;left:0;right:0;top:50%;transform:translateY(-50%);
+    text-align:center;color:#5c5344;pointer-events:none;opacity:0;transition:opacity .5s}
+  #res .n{font-size:66px;font-weight:700;letter-spacing:-.01em;line-height:1.05;font-variant-numeric:tabular-nums}
+  #res .u{font-size:15px;font-weight:500;letter-spacing:.06em;color:#8a7f6d}
+  #res .t{font-size:13px;font-weight:500;letter-spacing:.03em;color:#8a7f6d;margin-top:18px;min-height:1.2em}
+  #res .b{font-size:12px;letter-spacing:.03em;color:#a89c88;margin-top:5px;font-variant-numeric:tabular-nums}
+  #res .k{font-size:12.5px;letter-spacing:.02em;color:#5f7fa4;margin:14px auto 0;max-width:17em;
+    background:rgba(120,150,190,.12);border-radius:11px;padding:9px 13px;line-height:1.65}
+  #res .a{font-size:11px;font-weight:500;letter-spacing:.1em;color:#bdb19a;margin-top:20px;
+    opacity:0;transition:opacity .45s}
+  #ver{position:fixed;right:8px;bottom:6px;font-size:10px;letter-spacing:.06em;color:#c4b9a4;pointer-events:none;z-index:9;
+    font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ver"></div>
+<div id="hint">金の首を さっと なぞって ちぎる</div>
+<div id="alc"><div class="lab">アルコール <span id="alcdeg">0.0</span>度</div>
+  <div class="track"><div class="fill" id="alcfill"></div></div></div>
+<div id="cnt">1</div>
+<div id="res"><div class="n">0</div><div class="u">匹</div>
+  <div class="t"></div><div class="b"></div><div class="k"></div><div class="a">タップで もう一度</div></div>
+<script>
+(()=>{
+'use strict';
+const VERSION='v88';   // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+document.getElementById('ver').textContent=VERSION;
+// ---- チューニング定数 ----
+// 目的＝制限時間内にどこまで増やせるか。★「80匹までのタイム」ではダメ：下手なプレイヤーは
+//   死滅と拮抗して30匹前後で頭打ちになり、永遠に終われない＝記録も出ない（シムで確認済み）。
+//   時間を切れば必ず終わり、頭打ちになること自体がそのままスコアになる。
+// 時計は「容器の輪郭」そのもの＝UIを足さない。目線も盤面から外れない。
+// タイマーは最初にちぎった瞬間から（芽が熟すまで何もできない時間を計るのは不公平。前作v98の教訓）。
+// ★40秒。疲れ・待ち・リスクは全部おなじ1本のダイヤル（＝出芽の速さ）なので、密度を保ったまま
+//   疲れだけ減らすには時間を縮めるしかない。60秒だと1プレイ72回ちぎることになり手が疲れる。
+const TIME      = 30;    // 制限時間（秒）★長さの調整はここ（v73：40→30。ユーザー「30秒にしてみたい」）
+// 時間切れの瞬間はまだ指を振っている最中なので、そのままだと次のフリックが「もう一度」に拾われて
+// 結果を見る前に次が始まってしまう（実際に起きた）。この秒数はタップを受け付けない。
+const RESULT_WAIT = 1.4;
+const CAP       = 80;    // 上限個体数（容器がきれいに埋まる数）
+// リスク：熟した芽は放っておくと母細胞ごと死ぬ。切れるのは熟してから「猶予」秒だけ（winNow）。
+// ★v57：混雑ほど猶予を「長く」する（v52とは逆）。後半は的が多くて忙しいので、1本ずつに時間の余裕を
+//   持たせて緩和（ユーザー要望）。序盤(空)=WIN_LO＝短め → 満杯(混雑)=WIN_HI＝長め。占有occは死体も含む
+//   ＝死体が溜まって苦しい時ほど猶予が伸びる＝救済。
+let   WIN_LO   = 1.5;   // 序盤(空)の猶予（秒・短め＝タイト）
+let   WIN_HI   = 2.0;   // 満杯(混雑)時の猶予（秒）。★v86：2.2は緩すぎ→2.0（元1.9より僅かに猶予）
+let   WIN_CURVE= 1.0;   // 詰まるほど伸びるカーブ。1=直線／<1=早めに伸びる
+function winNow(){ return WIN_LO+(WIN_HI-WIN_LO)*Math.pow(Math.min(1,cells.length/CAP),WIN_CURVE); }
+// ★死にかけの警告演出（v40。ユーザー「死にかけが分かりにくい」）。ウルトラマンのカラータイマー＝
+//   ジタバタ暴れながら赤く点滅し、死に近づくほど点滅が速くなる＝直感的に「切らなきゃ」と気づける。
+const DIE_JIT   = 5.0;   // 死にかけのジタバタ幅（px・末期）
+const DIE_BLO   = 2.5;   // 点滅の速さ（Hz）warn=0 のとき
+const DIE_BHI   = 15;    // 点滅の速さ（Hz）warn=1（死ぬ寸前）＝カラータイマーが速く明滅
+const DIE_RED   = 0.62;  // 赤点滅の最大濃さ
+const DIE_ON    = 0.06;  // これ未満の warn では演出しない（熟した直後にいきなり暴れないように）
+// ★糖とアルコール（ユーザー案・シムで確認済み）。糖＝時計、アルコール＝失敗の蓄積。
+//   酵母が死ぬ→死体はそのまま残って場所を塞ぐ＋泡が出てアルコールが上がる→死体で首が探しにくく
+//   なりさらに死ぬ（負けの連鎖）。アルコール満タン＝ゲームオーバー／糖が尽きる＝時間切れ＝生存数がスコア。
+//   ※生きた酵母もアルコールを出す版はナイフの刃（増やすほど負ける）でシム却下。死からのみにする。
+const DEG_MAX       = 20;    // アルコール度数の上限（満タン＝20度＝酵母が生きられない限界。知育的表示）
+const ALC_SCORE_W   = 0.5;   // ★スコアへのアルコール減点の重み。
+                             //   score=生存数×(1−ALC_SCORE_W×alc²)。★v87：alc→alc²の二乗に（低アルコールはほぼ減点なし＝
+                             //   丁寧に低く抑えたプレイが報われる／高アルコールほど強く効く）。0で減点なし・満タンで最大 W ぶん減点。
+// ★v55：ジタバタ中(危険域)の酵母も、死ぬ前からアルコールとCO2を少し出す（ユーザー案・発酵ストレス＝より現実的）。
+//   ただし主源は従来どおり「死」（自動プレイヤーは常に危険域で切る＝トリクルを強くすると上手でも理不尽に負ける）。
+//   出すのは危険域(warn>ALC_WARN0)だけ＝きちんと早めに切れば0（v29の"生きた酵母も出す＝増やすほど負ける"罠は不踏）。
+let   ALC_WARN0     = 0.7;   // これ以上ジタバタ（死ぬ直前）でアルコール/CO2を出し始める（v67：0.35→0.7に戻す。
+                             //   0.35は普通に切っても芽が通過して出てしまい腕に関係なく17度張り付き＝制御不能だった）
+let   ALC_RATE      = 0.20;  // 危険域(warn>ALC_WARN0=0.7)の酵母が出すアルコール/秒（v86：0.20。10度は狙えるが腕で抑えられる程度）。
+                             //   ※早めに切れば危険域に入らず≒0度／粘って死ぬ直前まで放置した時だけ上がる＝腕で制御。__dbg.setAlcRate/setAlcWarn0で微調整可
+const GAS_DANGER    = 1.2;   // 危険域(warn=1)の酵母がCO2泡を出す頻度（毎秒の期待数＝視覚的に「弱ってる」）
+const SWEAT_RATE    = 60;    // ★弱った酵母が汗（代謝物）を散らす頻度（毎秒の期待数＝アルコール上昇中が視覚化される）
+const SWEAT_WARN0   = 0.45;  // ★汗を出し始める warn（アルコール(0.7)より早い＝「弱り始め」から見える。演出専用で難易度は不変）
+const ALC_PER_DEATH = 1/DEG_MAX; // 死んだ瞬間の上昇＝1度（主源）
+// ★v53：芽(的)は「速さ」でなく「同時に出ていられる数」を上限(budCap)で絞る。ユーザー指摘＝湧く速さを
+//   落としても的は時間とともに溜まる一方だった。上限方式なら的がそれ以上増えず、溜めて切り遅れれば
+//   死んでアルコールが上がる、も両立。混雑ほど上限を下げる（＝詰まるほど的が減少）。
+//   空(occ=0)=BUD_LO個 → 満杯(occ=CAP)=BUD_HI個。死体もoccに入る＝死体が溜まると的が更に減る＝救済。
+let   BUD_LO    = 10;    // 序盤(空)に同時に出せる芽の数の上限
+let   BUD_HI    = 6;     // ★満杯(混雑)時の同時上限（v86：緩すぎたので5→6に戻す＝後半の忙しさ・手応えを復活）
+let   BUD_CURVE = 0.7;   // 詰まるほど減らすカーブ。1=直線／<1=早めに減る／>1=終盤で一気に
+let   BUD_SPEED = 0.32;  // 1つの芽が熟す速さ（0→1/秒）。約3.1秒で切り頃。★ユーザー「もう少し早め」（0.28→0.32／0.35は速すぎた）
+// ★序盤の立ち上がりブースト（ユーザー「開始〜5匹まで増やすテンポが悪い」）。個体数が少ないほど熟すのを速め、
+//   EARLY_N 匹に達すると 1倍（＝中盤以降の難易度は一切変えない）。1匹のとき最大 (1+EARLY_BOOST) 倍。
+const EARLY_N     = 6;   // これに達するまで序盤ブーストが効く
+const EARLY_BOOST = 1.6; // 1匹のとき熟す速さ最大 2.6倍 → 6匹で 1.0倍へ線形に戻る
+// 炭酸ガス：酵母は糖からエタノールとCO2を出す。泡の量は個体数に比例＝増えるほど邪魔になる。
+// ★酵母の細胞表面は疎水性なので、泡に触れると気液界面に吸着して"事実上はがれない"（泡沫浮選と同じ原理。
+//   脱離に要するエネルギーが熱運動の桁違いに大きい）。押しのけられるのではなく、張り付いて運び上げられる。
+//   これが日本酒の「高泡」の正体＝泡が上がるのではなく酵母が泡に張り付いて運ばれ上に溜まる。
+//   （協会酵母の01系統＝泡なし酵母は、この細胞表面疎水性を失った変異株。関与遺伝子 AWA1）
+// ★視点は真上（顕微鏡でプレパラートを覗いている絵）＝画面に「上」は無い。重力は画面の奥向き。
+//   なので泡は上昇しないし、酵母も画面上では沈まない。泡は「その場でふくらんで押しのける」。
+// ★泡は容器の底からではなく「酵母自身」から出る（CO2を出しているのは酵母なので）。
+//   一様に湧かせると全員が同じ向きへ動くだけの単調なベルトコンベアになる。
+let   GAS_PER   = 0.045; // 1匹あたり毎秒いくつ泡が生まれるか
+// 泡は上限で止まらず、溶けているCO2を吸って育ち続ける。体積(面積)が一定速度で増えるので
+// 半径は √t で伸びる＝最初は急に、あとはじわじわ。★張り付いた酵母がCO2を出すので育ちが速まる
+let   GAS_FEED  = 700;   // 泡がふくらむ速さ（面積 px²/秒）
+const GAS_FEED_Y= 0.5;   // 張り付いた酵母1匹あたり、育ちが何割速くなるか
+let   GAS_RPOP  = 150;   // この半径まで育つと耐えきれず弾ける（容器の半径は約165）
+                         // ★邪魔の量の主ノブはここ。育つ速さを上げても早く弾けるだけで天井は動かない（実測）
+const GAS_MERGE = true;  // 触れ合った泡は合体して大きくなる（実際そうなる）
+const GAS_DRIFT = 14;    // 漂う速さ（px/秒）。真上から見ているので向きに偏りは無い
+const GAS_LOAD  = 0.35;  // 酵母を張り付けるほど重くて漂いにくい
+const GAS_CAP   = 2.4;   // 界面上で酵母が寄り集まる速さ＝横方向の毛管引力（びっしり詰まる）
+// 泡が弾けると液体が穴へ流れ込み、酵母はその流れに「運ばれる」（慣性で飛ぶのではないので
+// 流れが止まれば即止まる＝低レイノルズ数と矛盾しない）。なので破裂の吹き飛ばしは強くてよい。
+const GAS_POP   = 900;   // 弾けた瞬間に吹き飛ばす強さ ★破裂の迫力はここ
+const GAS_SHAKE = 0.095; // 破裂で画面が揺れる量（泡の半径あたり px）★揺れの強さはここ
+let   GAS_PUSH  = 300;   // 界面に入りきれなかった酵母を押しのける強さ
+const CUT_MIN   = 0.55;  // これ未満の芽はちぎれない
+let   NECK_HIT  = 3.2;   // 首の当たり判定倍率。★1.9→3.2＝首の近くを通れば切れる（正確になぞらなくていい）
+// ちぎりの成立条件（なぞり続けて全部切れてしまうのを防ぐ＝一擦り一ちぎり）
+// ★入力＝タップ（ユーザー選択）。スマホで細い首を正確になぞるのはストレスなので、金の首をタップして切る。
+//   1タップ＝1切り（押す＝1回切れる／離して再タップが要る）＝なぞりっぱなし攻略は構造的に不可能。
+const TAP_R     = 34;    // （タップ版の名残・なぞりでは未使用）
+const ONE_STROKE= true;  // 指を下ろして上げるまでに切れるのは1本だけ（これが連打＝落書きを防ぐ）
+let   CUT_SPEED = 260;   // これ未満の速さ(px/秒)では切れない。★430→260＝そっと動かしても切れる
+let   CUT_PERP  = 0.72;  // 首を横切る向きの許容。★0.62→0.72＝斜めでも切れる（ONE_STROKEが連打を防ぐので甘くてよい）
+const KICK      = 62;    // ちぎった時に離れる勢い
+// ★ちぎった手応え（v35「伸びて・切れて・飛ぶ」）。動機は混雑で「切れた」が読めないこと（v30と同じ）
+//   なので、飛ぶ距離ではなく「一瞬の伸び」と「離れる速さ」で見せる。低レイノルズ数とも矛盾しない
+//   （粘性で即止まる＝遠くへは飛ばない。飛ぶのは離れる瞬間だけ）
+// ★ユーザーが snapfx.html で3成分とも「強」を選択（v36）。
+//   ※FLY は VMAX(420) で頭打ちになるので実効は420。ユーザーはその頭打ちの状態を触って選んでいるので
+//     VMAX は上げない（上げると触って選んだものと別物になる。VMAX は v21 の暴走の歯止めでもある）。
+let   FLY       = 480;   // ちぎれた子が飛び出す速さ(px/秒)。母は反作用ぶん FLY_MOM
+const FLY_MOM   = 0.45;  // 母の引き戻され（作用反作用）
+let   SNAP_ST   = 0.75;  // 切れた瞬間の伸び（離れる向きの倍率-1）。面積は保つ＝痩せる
+let   SNAP_DUR  = 0.32;  // 伸びが戻るまで。ぷるんと1回だけ揺り返す
+const SNAP_HZ   = 4.2;   // 揺り返しの速さ
+let   THR_DUR   = 0.22;  // 糸（首の名残）が伸びて切れるまで
+let   THR_W     = 0.42;  // 糸の太さ（芽の半径に対する比）
+const GROW      = 2.6;   // 生まれた子が大人サイズになる速さ
+const REPEL     = 26;    // 反発の強さ
+// ★酵母の大きさでは水は「粘っこい蜜」で、慣性で飛ぶことは物理的にあり得ない（低レイノルズ数＝
+//   力が働いている間だけ動き、消えたら即止まる）。上限が無いと、泡に張り付いた細胞（反発を受けない）
+//   に周りがめり込んだまま押し合いを続け、泡が弾けて拘束が外れた瞬間に746px/秒で弾け飛ぶ（実測）。
+const VMAX      = 420;   // 酵母が出せる最高速度（px/秒）。破裂の流れに運ばれる時だけここまで出る
+const DRAG      = 0.86;  // 減衰
+const WOB       = 7.0;   // ぷるん の速さ
+// 「ふるふるふる、（間）、ふるふるふる」＝速い小刻みな震えを、束にして間を空けて出す。
+// 母細胞はほぼ静止。震えるのは首を支点にした新芽だけ。
+const SHIV_HZ   = 11;    // ふるふるの速さ（Hz）★小刻みさはここ
+const SHIV_ANG  = 0.19;  // 1回の震えで首が振れる角度（rad）★震えの大きさはここ
+const SHIV_PUSH = 0.14;  // 震えながら押し出そうとする量（芽の距離比）
+const SHIV_MOM  = 0.16;  // 母細胞への揺り返し（0で完全静止）
+const BURST_DUR = 0.38;  // 1周期のうち「ふるふる」している割合（残りは間）
+const BURST_SLOW= 0.55;  // 若い芽：ふるふるが来る回数（回/秒）
+const BURST_FAST= 1.10;  // 熟した芽：＝近づくほど頻繁に来る
+const ASP_MIN   = 1.08;  // 卵形の長短比＝ほぼ丸く、わずかに卵形（顕微鏡写真に合わせた）
+const ASP_MAX   = 1.22;
+const SPIN_DRAG = 0.88;  // 回転の減衰
+// 細胞の中身（顕微鏡写真の粒）：顆粒＋液胞。体に固定＝体が回れば中身も回る
+const GRAN_N    = [5,9];  // 顆粒の数
+const GRAN_A    = 0.20;   // 顆粒の濃さ ★中身の主張はここ
+const VAC_A     = 0.44;   // 液胞（大きく淡い1つ）の濃さ
+// ブラウン運動：熱でゆらぐ。小さい粒ほど激しく(ゆらぎ∝1/√r)、大きい粒ほど
+// 慣性が効いてなめらかに漂う(時定数∝r²)。液胞と顆粒の動きの差はこれだけで出る
+const BROWN_V   = 0.34;   // r=0.10 の粒の速さ（細胞半径/秒）★ブラウン運動の激しさはここ
+const BROWN_TAU = 0.075;  // r=0.10 の粒の慣性の時定数（秒）★漂いのなめらかさ
+const NUC_R     = 0.24;   // 中心の核が占める領域（粒はここへ入れない）
+
+let runT=0, started=false, finished=false, resT=0;   // 制限時間の状態
+let alc=0, gameover=false;                            // アルコール量(0..1)／アルコール満タンで敗北
+let probe=null;   // 見た目検証用（通常は null ＝何もしない）
+const dbg={spd:0,rej:""};   // ちぎり判定の内訳（検証用・無害）
+const cv=document.getElementById('c'), g=cv.getContext('2d');
+const elHint=document.getElementById('hint'), elCnt=document.getElementById('cnt');
+const elAlcFill=document.getElementById('alcfill'), elAlcDeg=document.getElementById('alcdeg');
+const elAlc=document.getElementById('alc');
+let W=0,H=0,DPR=1,cx=0,cy=0,VR=0,R0=0;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=cv.clientWidth; H=cv.clientHeight;
+  cv.width=W*DPR; cv.height=H*DPR; g.setTransform(DPR,0,0,DPR,0,0);
+  cx=W/2; VR=Math.min(W*0.45,H*0.40);
+  // ★お椀を画面中央より少し下げ、上に「文字＋バー」の帯、下に「匹数」を置く余白を作る（間延び解消）。
+  cy=Math.round(H*0.53);
+  R0=Math.max(11,VR*0.105);
+  // ★UIをお椀に紐づけて配置＝浮いた印象を消す。上：ヒント→アルコールバーをお椀の真上に密に、下：匹数をお椀の真下に。
+  const top=cy-VR, bot=cy+VR;
+  elHint.style.top=(top-78)+'px'; elHint.style.bottom='auto'; elHint.style.padding='0';
+  elAlc.style.top =(top-46)+'px';
+  elCnt.style.top =(bot+20)+'px'; elCnt.style.bottom='auto';
+}
+window.addEventListener('resize',resize);
+// ★iOS Safari：アドレスバーの出入りは window.resize を出さないことがあるが visualViewport.resize は出る＝盤面を追従させる。
+//   画面回転は寸法確定が一拍遅れるので少し待ってから測り直す。
+if(window.visualViewport) window.visualViewport.addEventListener('resize',resize);
+window.addEventListener('orientationchange',()=>setTimeout(resize,120));
+
+const rnd=(a,b)=>a+Math.random()*(b-a);
+
+// ---- 個体 ----
+let cells=[];
+function mkCell(x,y,r,rot){
+  return {x,y,vx:0,vy:0,r,tr:R0,
+    rot:(rot===undefined?rnd(0,Math.PI*2):rot), w:rnd(-0.6,0.6),
+    asp:rnd(ASP_MIN,ASP_MAX), budOff:rnd(0,Math.PI*2),
+    bud:0, budK:rnd(0.75,1.3), over:0, beat:Math.random(), shiv:rnd(0,6.28),
+    gran:mkGran(Math.round(rnd(GRAN_N[0],GRAN_N[1]))), bgran:mkGran(3),
+    dead:false, deadT:0,   // 死ぬと true＝そのまま残って場所を塞ぐ／切れない／出芽しない
+    flash:0,               // 切られた瞬間に光る（混雑でも「これを切った」が分かる）
+    snapT:0, snapA:0,      // ちぎれた瞬間の伸び（snapA＝離れる向き）
+    jx:0, jy:0,            // 死にかけのジタバタ量（見た目）。切る当たり判定も同じだけずらして一致させる
+    stick:null, stickA:0, stickT:0, newT:0, joyT:0, faceId:FACE_MIX[(Math.random()*FACE_MIX.length)|0],
+    wob:0, wobP:rnd(0,6.28), hue:rnd(-6,6), flip:Math.random()<.5?1:-1, born:0};
+}
+// 細胞の中身を作る：顆粒を面積一様に散らし、液胞（大きく淡い）を1つ
+function mkGran(n){
+  const a=[];
+  for(let i=0;i<n;i++){
+    const th=rnd(0,6.28), rr=Math.sqrt(rnd(0.18,0.66));
+    a.push({x:Math.cos(th)*rr, y:Math.sin(th)*rr, r:rnd(0.07,0.14), v:0, vx:0, vy:0});
+  }
+  const th=rnd(0,6.28), rr=Math.sqrt(rnd(0.28,0.52));
+  a.push({x:Math.cos(th)*rr, y:Math.sin(th)*rr, r:rnd(0.20,0.27), v:1, vx:0, vy:0});
+  return a;
+}
+// ブラウン運動。粒は体に固定した座標（単位円）の中で漂う＝体が回れば中身も回る
+function brown(arr,dt){
+  const rt=Math.sqrt(dt);
+  for(const q of arr){
+    const tau=BROWN_TAU*(q.r/0.10)*(q.r/0.10);      // τ∝r² 大きい粒ほど軌跡がなめらか
+    const vr=BROWN_V*Math.pow(0.10/q.r,1.5);        // 等分配則 v∝r^-1.5 大きい粒ほど遅い
+    const k=vr*Math.sqrt(6/tau), dc=Math.exp(-dt/tau);
+    q.vx=q.vx*dc+(Math.random()*2-1)*k*rt;
+    q.vy=q.vy*dc+(Math.random()*2-1)*k*rt;
+    q.x+=q.vx*dt; q.y+=q.vy*dt;
+    let d=Math.hypot(q.x,q.y);
+    const inner=NUC_R+q.r*0.8;                      // 核にぶつかったら押し返される
+    if(d<inner&&d>1e-4){ const s=inner/d; q.x*=s; q.y*=s; q.vx*=-0.3; q.vy*=-0.3; }
+    d=Math.hypot(q.x,q.y);
+    const lim=0.94-q.r;                             // 細胞膜の内側から出られない
+    if(d>lim&&d>1e-4){ const s=lim/d; q.x*=s; q.y*=s; q.vx*=-0.3; q.vy*=-0.3; }
+  }
+}
+// 卵形：面積を r の円と同じに保った半長軸/半短軸
+const semiA=c=>c.r*Math.sqrt(c.asp);
+const semiB=c=>c.r/Math.sqrt(c.asp);
+const foc  =c=>semiA(c)-semiB(c);           // カプセル近似の焦点オフセット
+// 出芽は体のどこからでも＝多極出芽（実物の酵母もそう。どこから出るか読めないのが面白い）
+// budOff は体に固定した角度なので、体が回れば芽も一緒に回る
+const budAng=c=>c.rot+c.budOff;
+// 卵形の輪郭までの距離（体の角度 th における半径）
+function surfR(c,th){
+  const a=semiA(c), b=semiB(c), ct=Math.cos(th)*b, st=Math.sin(th)*a;
+  return a*b/Math.hypot(ct,st);
+}
+function reset(){ cells=[mkCell(cx,cy,R0)]; cells[0].r=R0; }
+
+// ---- 制限時間 ----
+const elRes=document.getElementById('res');
+let best=+(localStorage.getItem('yeastBestScore')||0);   // ★スコア制に変更（旧yeastBestは匹数なので別キー）
+// 度数を近い強さのお酒にたとえる（知育の豆知識）。実際の代表的な度数で。
+//   ※20度は満タン＝ゲームオーバー時のみ（生存クリアで20度にはならない）。
+function bevOf(deg){
+  if(deg<1) return {msg:'💡 1度未満＝ノンアルコール飲料くらい！ 元気な酵母'};
+  // 発酵のお酒を中心に度数順（どぶろく・マッコリはまさに酵母発酵）
+  const T=[[4,'シードル',3],[6,'ビール',5],[9,'マッコリ',7],[11.5,'どぶろく',10],
+    [13.5,'ワイン',12],[16,'日本酒',15],[19,'紹興酒',17],[999,'日本酒の原酒',20]];
+  for(const [th,name,d] of T) if(deg<th) return {name,deg:d};
+  return {name:'日本酒の原酒',deg:20};   // 20度＝発酵で到達する上限（蒸留の焼酎でなく原酒が筋。酵母が生きられない限界）
+}
+function finish(lost){
+  finished=true; gameover=!!lost;
+  const n=livingCount();                          // 生きている酵母の数
+  // ★スコア＝生存数 × (1−アルコール)。死ぬと生存数もアルコールも悪化する二重減点＝きれいな執行を報う。
+  //   表示は知育的に「アルコール度数」で（純度%より発酵が実感できる）。度数=アルコール×20度（20度=全滅）。
+  const deg=(alc*DEG_MAX).toFixed(1);             // アルコール度数（低いほど高得点）
+  const score=lost?0:Math.round(n*(1-ALC_SCORE_W*alc*alc)); // 減点は二乗＝低アルコールはほぼ無傷・生存数が主
+  const isBest=score>best;
+  if(isBest){ best=score; localStorage.setItem('yeastBestScore',best); }
+  elRes.querySelector('.n').textContent=lost?'☠':score;
+  elRes.querySelector('.u').textContent=lost?`アルコール${DEG_MAX}度で全滅`:'点';
+  elRes.querySelector('.t').textContent=lost?'':`生存 ${n}匹　アルコール ${deg}度`;
+  elRes.querySelector('.b').textContent=(isBest&&!lost?'さいこう記録！　':'')+`これまでの最高 ${best}点`;
+  // ★豆知識：最終アルコール度数を、近い強さのお酒にたとえて知育に（ユーザー案）
+  const bev=bevOf(alc*DEG_MAX);
+  elRes.querySelector('.k').textContent=bev.msg||`💡 ${deg}度は ${bev.name}（約${bev.deg}度）くらいの強さ`;
+  elRes.style.opacity='1'; elHint.style.opacity='0';
+  elRes.querySelector('.a').style.opacity='0'; resT=0;
+  try{ const a=actx(), t=a.currentTime;
+    if(lost){                                     // 敗北＝下がる音
+      const o=a.createOscillator(), g2=a.createGain();
+      o.type='sawtooth'; o.frequency.setValueAtTime(300,t);
+      o.frequency.exponentialRampToValueAtTime(70,t+0.7);
+      g2.gain.setValueAtTime(0.001,t); g2.gain.exponentialRampToValueAtTime(0.22,t+0.03);
+      g2.gain.exponentialRampToValueAtTime(0.001,t+0.8);
+      o.connect(g2).connect(a.destination); o.start(t); o.stop(t+0.85);
+    }else for(let i=0;i<3;i++){                    // 時間切れ＝上がる音
+      const o=a.createOscillator(), g2=a.createGain();
+      o.type='sine'; o.frequency.value=[523,659,784][i];
+      g2.gain.setValueAtTime(0.001,t+i*0.11);
+      g2.gain.exponentialRampToValueAtTime(0.16,t+i*0.11+0.02);
+      g2.gain.exponentialRampToValueAtTime(0.001,t+i*0.11+0.5);
+      o.connect(g2).connect(a.destination); o.start(t+i*0.11); o.stop(t+i*0.11+0.55); }
+  }catch(e){}
+}
+function restart(){
+  reset(); gas.length=0; deaths.length=0; bits.length=0; rings.length=0; trail.length=0; cutflash.length=0; taps.length=0; threads.length=0;
+  runT=0; started=false; finished=false; cut=0; gasAcc=0; alc=0; gameover=false;
+  elRes.querySelector('.u').textContent='点';
+  elRes.style.opacity='0'; elHint.style.opacity='1'; elCnt.textContent='1';
+}
+
+// ---- 音 ----
+let ac=null;
+// ★iOS Safari は AudioContext を suspended 状態で生成することがある＝ユーザー操作の中で resume を叩かないと無音。
+//   actx() はタッチ/クリック（onDown）の中で呼ばれるので、ここで resume すれば確実に音が鳴る。
+function actx(){ if(!ac) ac=new (window.AudioContext||window.webkitAudioContext)();
+  if(ac.state==='suspended') ac.resume(); return ac; }
+// ★ちぎる音＝「ポコッ」（丸い泡）。ユーザーが sound-gallery.html の9候補から6番を選び、
+//   sound6.html で7つのつまみを触って値を確定（base400/sweep4/rise0.08/decay0.16/click0.3/vol1.5/jit3.5）。
+//   物理＝水中の泡がはじける音（ミンナート共鳴。泡が縮むと音が上がる）＝サイン波が base から
+//   base*sweep へ上がるのが「泡っぽさ」の正体。click＝頭の「ポ」の当たり。
+//   ★jit＝1回ごとに高さを±半音で揺らす。この音は音程がはっきりしており、40秒で60回同じ高さだと
+//     単調になるため（sound6.html の「ゆらぎ連打」でユーザーが確認して jit:強 を選んだ）。
+const SND={ base:400, sweep:4, rise:0.08, decay:0.16, click:0.3, vol:0.85, jit:3.5 };
+// ★vol 1.5→0.85（v45）：切る音は毎回鳴る主役級で耳が慣れ破裂が埋もれるため、破裂を際立たせるべく半減。
+//   可聴帯域(rmsHi)で 破裂は切る音の2.6→4.8倍に。切る音の他の値(base/sweep等)はユーザー確定なので不変。
+// ac を引数に取るのは、OfflineAudioContext で同じ音を描画して波形を測れるようにするため（耳で聞けないので）
+// 割れ防止のソフトクリップ。~0.8以下はほぼ素通し、飛び出た頭だけ tanh でなだらかに丸める
+//   （音量「大」1.5＋jitで稀にピーク1.07＝1.0超で割れるのを、音量を下げずに抑える）
+function softClip(a){
+  const ws=a.createWaveShaper(), C=new Float32Array(1024);
+  for(let i=0;i<1024;i++){ const x=i/511.5-1; C[i]=0.92*Math.tanh(1.45*x)/Math.tanh(1.45); }  // 天井0.92＝余裕
+  ws.curve=C; ws.oversample='2x'; return ws;
+}
+function cutSound(a,t,n,P){
+  P=P||SND;
+  const lim=softClip(a); lim.connect(a.destination);
+  const out=a.createGain(); out.gain.value=(P.vol===undefined?1:P.vol); out.connect(lim);
+  const m=Math.pow(2,(Math.random()*2-1)*(P.jit||0)/12);   // ±jit 半音のゆらぎ（単調さ対策）
+  const f0=P.base*m, f1=P.base*P.sweep*m;
+  const o=a.createOscillator(), og=a.createGain(); o.type='sine';
+  o.frequency.setValueAtTime(f0,t);
+  o.frequency.exponentialRampToValueAtTime(f1,t+P.rise);   // 上がる＝泡がはじける
+  og.gain.setValueAtTime(0.35,t); og.gain.exponentialRampToValueAtTime(0.0008,t+P.decay);
+  o.connect(og).connect(out); o.start(t); o.stop(t+P.decay+0.02);
+  if(P.click>0){                                           // 頭の「ポ」＝ごく短い高域ノイズ
+    const len=Math.max(4,Math.floor(a.sampleRate*0.006)), buf=a.createBuffer(1,len,a.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*(1-i/len);
+    const s=a.createBufferSource(); s.buffer=buf;
+    const hp=a.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=2000;
+    const g=a.createGain(); g.gain.value=P.click; s.connect(hp).connect(g).connect(out); s.start(t);
+  }
+}
+function popSound(n){ try{ const a=actx(); cutSound(a,a.currentTime,n,SND); }catch(e){} }
+
+// 泡の破裂音。★泡は大きいほど低い音で鳴る（ミンナート共鳴＝周波数が半径に反比例。
+//   ビール瓶に息を吹き込むのと同じで、空洞が大きいほど低い）。物理が音程を決めてくれる。
+//   2層：膜が破れる「パチッ」（ごく短いノイズ）＋ 空洞が鳴る「ボン」（減衰する低音）。
+// ★破裂音（v42で作り直し。ユーザー「破裂音をもっと分かりやすく」）。3層＝
+//   ①パチッ（膜の破断＝立ち上がり0の鋭い広帯域）②ボンッ（空洞の共鳴・ミンナート：大きい泡ほど低い）
+//   ③シュワッ（CO2が抜ける短いノイズの尾）＝ガスの破裂と分かる＆切る音「ポコッ」と混ざらない。
+//   出力は softClip 経由で割れ止め。GASPOP_VOL で全体の大きさ。
+let GASPOP_VOL = 1.8;   // ★破裂音は切る音(ポコッ)より大きく（ユーザー要望）。実測RMSで切る音の約2倍
+function gasPopSound(r,ac,tt){
+  try{
+    const a=ac||actx(), t=(tt===undefined?a.currentTime:tt);
+    const k=Math.min(1, r/GAS_RPOP);                  // 0=小さい 1=最大
+    const out=a.createGain(); out.gain.value=GASPOP_VOL*(0.5+0.6*k);  // 大きい泡ほど大きい音
+    // ★破裂専用リミッタ＝oversample無しの波形整形。共有 softClip は2倍OSが鋭い破裂で
+    //   オーバーシュートし、音量を上げると peak が1.1〜1.35に跳ねて割れる（実測）。OS無しなら出力は
+    //   curve の天井(0.96)を厳密に超えない＝いくら押しても割れずに実効音量(RMS)だけ上がる。
+    const lim=a.createWaveShaper(), C=new Float32Array(1024);
+    for(let i=0;i<1024;i++){ const x=i/511.5-1; C[i]=0.96*Math.tanh(1.6*x)/Math.tanh(1.6); }
+    lim.curve=C; lim.oversample='none';
+    out.connect(lim); lim.connect(a.destination);
+    // ★エネルギーを可聴域(1〜4kHz)に寄せる：小型スピーカー/耳は低音を鳴らせないので、低音を増やしても
+    //   聞こえない（実測 rmsHi）。ボンの低音頼みをやめ、CO2の「プシュッ」を主役にブライトに。
+    // ① パチッ＝膜の破断。ごく短い広帯域ノイズ、立ち上がり0。ハイパスを高めて鋭い click に
+    const len1=Math.floor(a.sampleRate*0.020), b1=a.createBuffer(1,len1,a.sampleRate), d1=b1.getChannelData(0);
+    for(let i=0;i<len1;i++) d1[i]=(Math.random()*2-1)*Math.pow(1-i/len1,2.2);
+    const s1=a.createBufferSource(); s1.buffer=b1;
+    const hp=a.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=1800-k*600;
+    const cg=a.createGain(); cg.gain.value=0.85;
+    s1.connect(hp).connect(cg).connect(out); s1.start(t);
+    // ② ボンッ＝空洞の共鳴。半径に反比例（大きい泡ほど低い）だが可聴域に収める（下限180・上限900）。
+    const f=Math.max(180, Math.min(900, 2200*Math.pow(12/Math.max(6,r),0.8)));
+    const o=a.createOscillator(), og=a.createGain(); o.type='triangle';
+    o.frequency.setValueAtTime(f*1.15,t);
+    o.frequency.exponentialRampToValueAtTime(f*0.65,t+0.05+0.20*k);
+    og.gain.setValueAtTime(0.20+0.26*k,t);            // ★ramp無し＝立ち上がり0
+    og.gain.exponentialRampToValueAtTime(0.0008,t+0.07+0.24*k);
+    o.connect(og).connect(out); o.start(t); o.stop(t+0.11+0.28*k);
+    // ③ プシュッ＝CO2が抜ける音。★主役。可聴のど真ん中(約2.8kHz)を広めに、大きく・少し長く
+    const dur3=0.07+0.11*k, len3=Math.floor(a.sampleRate*dur3), b3=a.createBuffer(1,len3,a.sampleRate), d3=b3.getChannelData(0);
+    for(let i=0;i<len3;i++) d3[i]=(Math.random()*2-1)*Math.pow(1-i/len3,1.3);
+    const s3=a.createBufferSource(); s3.buffer=b3;
+    const bp=a.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=2800; bp.Q.value=0.5;
+    const fg=a.createGain(); fg.gain.value=0.5+0.18*k;
+    s3.connect(bp).connect(fg).connect(out); s3.start(t+0.004);
+  }catch(e){}
+}
+
+// 切った瞬間のフィードバック：切断点で白く弾ける閃光（混雑でも「切れた」が読める）＋数字が跳ねる
+const cutflash=[];
+function cutFx(x,y,ax){
+  cutflash.push({x,y,ax,life:1});
+  elCnt.style.transform='scale(1.35)';         // 生存数がビクッ＝切れた確証
+  clearTimeout(cutFx._t); cutFx._t=setTimeout(()=>elCnt.style.transform='scale(1)',90);
+}
+
+// ---- 破片 ----
+// ちぎった瞬間の演出は compare.html で7案を実際に切りながら比較して決めた。
+// 残ったのは破片だけ（ヒットストップ/スロー/閃光/画面揺れ/伸びて切れる/勢い は不採用）。
+const BITS_N  = 44;   // 破片の数 ★ここが「快感」の主役
+const BITS_SP = 2.4;  // 飛ぶ速さの倍率
+const BITS_SZ = 1.5;  // 大きさの倍率
+const bits=[];
+function burst(x,y,r,cutAx){
+  // 刃の向きから左右へ噴き分ける（＝ちぎれた二つが離れる向き）
+  for(let i=0;i<BITS_N;i++){
+    const side=i%2?1:-1;
+    const a=cutAx+Math.PI/2*side+rnd(-0.5,0.5), s=rnd(70,240)*BITS_SP;
+    bits.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,r:rnd(1.0,3.2)*BITS_SZ,life:1});
+  }
+  rings.push({x,y,r:r*0.5,life:1});
+}
+const rings=[];
+// ★ちぎれた母と子をつなぐ糸。伸びながら細くなり、THR_DUR で切れる（＝「伸びて切れる」の本体）
+const threads=[];
+
+// ---- 入力（ちぎり）----
+const trail=[];
+let px=0,py=0,down=false,pt=0,strokeCuts=0;
+function pos(e){ const t=e.touches?e.touches[0]:e; return [t.clientX,t.clientY]; }
+// ★速さは1イベントの瞬間値で測ってはいけない。フレームが詰まると時間差が極小になり、
+//   実際はゆっくり動かしていても見かけの速度が500px/秒超に跳ねて誤爆する（実測で確認）。
+//   直近 SPD_WIN 秒ぶんを均した速度で判定する。
+//   さらに、ストローク開始直後は履歴が1件しかなく平均になっていない＝そこが一番跳ねる。
+//   SPD_MIN 秒ぶん貯まるまでは速度を信用しない（＝切らない）。
+const SPD_WIN=0.05, SPD_MIN=0.018;
+const hist=[];
+// タップした場所に一番近い「熟した首」を切る（TAP_R以内なら）
+const taps=[];   // タップの波紋（押した手応え。当たっても外しても出る）
+function tapCut(x,y){
+  taps.push({x,y,life:1});
+  let best=null, bnx=0, bny=0, bd=1e9;
+  for(const c of cells){
+    if(c.dead || c.bud<CUT_MIN) continue;
+    const a=budAng(c), nd=neckD(c);
+    const nx=c.x+Math.cos(a)*nd, ny=c.y+Math.sin(a)*nd;
+    const d=Math.hypot(nx-x, ny-y);
+    if(d<bd){ bd=d; best=c; bnx=nx; bny=ny; }
+  }
+  if(best && bd<=TAP_R) split(best, bnx, bny);   // split が 数字・タイマー開始・演出まで面倒を見る
+}
+function onDown(e){
+  // ★タッチ時は既定動作を止める＝iOSのダブルタップ拡大を抑え、touchstartの後に来る合成マウスイベントの
+  //   二重発火（phantom stroke）も防ぐ。マウス（e.touches無し）は素通し＝PCの挙動は不変。
+  if(e.touches && e.cancelable) e.preventDefault();
+  actx();
+  if(finished){ if(resT>=RESULT_WAIT) restart(); return; }
+  down=true; strokeCuts=0; pt=performance.now(); hist.length=0;
+  const [x,y]=pos(e); px=x; py=y; trail.length=0; trail.push({x,y,life:1});
+}
+function onMove(e){
+  if(!down) return; if(e.cancelable) e.preventDefault();
+  const [x,y]=pos(e), now=performance.now();
+  const dt=Math.max(0.004,(now-pt)/1000);
+  trail.push({x,y,life:1}); if(trail.length>16) trail.shift();
+  hist.push({d:Math.hypot(x-px,y-py), t:dt});
+  if(hist.length>16) hist.shift();
+  let sd=0, st=0;
+  for(let i=hist.length-1;i>=0 && st<SPD_WIN;i--){ sd+=hist[i].d; st+=hist[i].t; }
+  slice(px,py,x,y, st>=SPD_MIN ? sd/st : 0);
+  px=x; py=y; pt=now;
+}
+function onUp(){ down=false; }
+cv.addEventListener('mousedown',onDown); cv.addEventListener('mousemove',onMove);
+window.addEventListener('mouseup',onUp);
+cv.addEventListener('touchstart',onDown,{passive:false});
+cv.addEventListener('touchmove',onMove,{passive:false});
+window.addEventListener('touchend',onUp);
+window.addEventListener('touchcancel',onUp);   // iOSは通知やジェスチャ割込みで touchcancel を出す＝ストロークを畳む
+// ★iOS Safari の2本指ピンチズーム（gesture系イベント）を止める＝盤面が拡大縮小してズレない。
+document.addEventListener('gesturestart', e=>e.preventDefault());
+document.addEventListener('gesturechange',e=>e.preventDefault());
+document.addEventListener('gestureend',   e=>e.preventDefault());
+// ★ダブルタップ拡大の保険：300ms以内の連続タップの2発目を無効化（touch-action:none で大抵防げるが念のため）。
+let _lastTap=0;
+document.addEventListener('touchend',e=>{ const now=e.timeStamp;
+  if(now-_lastTap<300 && e.cancelable) e.preventDefault(); _lastTap=now; }, {passive:false});
+
+function segDist(px,py,ax,ay,bx,by){
+  const dx=bx-ax, dy=by-ay, l2=dx*dx+dy*dy;
+  let t=l2?((px-ax)*dx+(py-ay)*dy)/l2:0; t=Math.max(0,Math.min(1,t));
+  const qx=ax+dx*t, qy=ay+dy*t;
+  return Math.hypot(px-qx,py-qy);
+}
+// なぞりの快適化：ONE_STROKE が「1ストローク1切り」を保証するので、1回の判定はいくら甘くても
+//   連打（＝なぞりっぱなし攻略）にならない。so 当たりを大きく・向きと速さをゆるくして、
+//   「細い首を正確になぞる」ストレスを消す。★候補は複数あればスワイプに一番近いものを1つだけ切る。
+function slice(ax,ay,bx,by,spd){
+  const mx=bx-ax, my=by-ay, ml=Math.hypot(mx,my);
+  dbg.spd=spd;
+  if(ml<2) return;
+  if(ONE_STROKE && strokeCuts>0){ dbg.rej='使い切ったストローク'; return; }
+  if(spd<CUT_SPEED){ dbg.rej='遅すぎ'; return; }
+  const sx=mx/ml, sy=my/ml;                // 指の進む向き
+  let best=null, bnx=0, bny=0, bd=1e9;
+  for(const c of cells){
+    if(c.dead || c.bud<CUT_MIN) continue;
+    const a=budAng(c), nd=neckD(c);
+    const nx=c.x+Math.cos(a)*nd+c.jx, ny=c.y+Math.sin(a)*nd+c.jy;  // ジタバタと同じだけずらす＝見た目と判定が一致
+    const d=segDist(nx,ny,ax,ay,bx,by);
+    if(d >= budR(c)*NECK_HIT){ continue; }                       // 首の近くを通ったか（大きめ）
+    if(Math.abs(sx*Math.cos(a)+sy*Math.sin(a)) > CUT_PERP){ dbg.rej='向きが違う'; continue; }  // 横切る向きか（ゆるめ）
+    if(d<bd){ bd=d; best=c; bnx=nx; bny=ny; }                    // 一番近い首を選ぶ
+  }
+  if(best){ split(best,bnx,bny,Math.atan2(sy,sx)); strokeCuts++; dbg.rej=''; }
+}
+// 束の窓：位相 p(0..1) のうち前半 BURST_DUR だけ「ふるふる」が鳴り、あとは間
+const ss=x=>x*x*(3-2*x);                              // なめらかな立ち上がり/収まり
+function burstGate(p){
+  if(p>=BURST_DUR) return 0;
+  const u=p/BURST_DUR;
+  return ss(Math.min(1,u/0.14))*ss(Math.min(1,(1-u)/0.34)); // すっと来て、すっと収まる
+}
+// 震えの強さの包絡：出芽し始めで立ち上がり、熟すほど強く
+function beatEnv(c){ return Math.min(1,Math.max(0,(c.bud-0.04)/0.16))*(0.55+0.45*c.bud); }
+
+function budR(c){ return c.r*(0.16+0.62*c.bud); }
+function budAsp(c){ return 1+(c.asp-1)*c.bud; }              // 若い芽は丸く、熟すと卵形に
+function budA(c){ return budR(c)*Math.sqrt(budAsp(c)); }
+// 芽の中心までの距離／首（＝くびれ）の位置。芽が生えた向きの輪郭を基準にする
+function budD(c){ return surfR(c,c.budOff)*0.90 + budA(c)*0.74; }
+// ★芽も容器の中に収める。母体だけを壁判定していたので、外を向いた熟した芽が縁からはみ出していた
+// （実測で母体3px に対し芽28.9px）。芽の向きは体に固定なので、母を内側へ引き戻すのが唯一の手。
+function fitBud(c){
+  if(c.bud<=0.02) return;
+  const a=budAng(c), d=budD(c);
+  const ex=c.x+Math.cos(a)*d-cx, ey=c.y+Math.sin(a)*d-cy, ed=Math.hypot(ex,ey);
+  const lim=VR-budA(c)*0.86;               // 母体と同じだけ縁に埋まってよい
+  if(ed>lim && ed>0.001){
+    const ov=ed-lim, nx=ex/ed, ny=ey/ed;
+    c.x-=nx*ov; c.y-=ny*ov;
+    // ★位置だけ戻して外向きの速度を残すと、毎フレーム出ては押し戻される拮抗になる（実測6.1px/秒の震え）
+    const vn=c.vx*nx+c.vy*ny;
+    if(vn>0){ c.vx-=nx*vn; c.vy-=ny*vn; }
+  }
+}
+function neckD(c){ return (surfR(c,c.budOff) + budD(c)-budA(c))/2; }
+
+// ---- 炭酸ガス ----
+const gas=[]; let GASOFF=false;   // 検証用：泡を止めて比較できる
+let shkT=0, shkA=0;               // 破裂の画面揺れ（大きい泡ほど大きく・長く）
+let gasAcc=0;
+// 泡は酵母から出る＝出どころが読めない。狙っているその場所から湧くこともある
+function spawnGas(){
+  if(!cells.length) return;
+  const c=cells[(Math.random()*cells.length)|0];
+  const a=rnd(0,6.28), r0=rnd(2.5,4);
+  // ★破裂サイズは泡ごとにばらつく（v42・物理的により自然）。実際の泡沫は膜の排水しだいで
+  //   小さいうちに割れるものも大きく育つものもある。固定サイズでカチッと弾ける機械っぽさを消す。
+  //   平均は GAS_RPOP のまま（±約20%）＝邪魔の総量は変えない。
+  gas.push({x:c.x+Math.cos(a)*semiA(c)*0.8, y:c.y+Math.sin(a)*semiB(c)*0.8,
+    r:r0, area:Math.PI*r0*r0, vx:0, vy:0, feed:rnd(0.75,1.3), rpop:GAS_RPOP*rnd(0.80,1.18)});
+}
+function popGas(b,i){
+  // 弾けた＝張り付いていた酵母は解放され、周りは押しのけられる。
+  // ★張り付いている間その細胞は反発を受けない＝周りがめり込んだまま溜まっている。
+  //   そのまま解放すると溜まった反発が一気に解けて弾け飛ぶので、先に位置でめり込みをほどく。
+  for(const c of onBub(b)){ c.stick=null; c.vx=0; c.vy=0; }
+  for(let k=0;k<3;k++) for(const c of cells) for(const o of cells){
+    if(c===o||o.stick) continue;
+    const dx=o.x-c.x, dy=o.y-c.y, d=Math.hypot(dx,dy), min=(semiB(c)+semiB(o))*0.98;
+    if(d<min && d>0.001){                       // 速度ではなく位置で、そっと離す
+      const s=(min-d)*0.5/d;
+      if(!c.stick){ c.x-=dx*s; c.y-=dy*s; }
+      o.x+=dx*s; o.y+=dy*s;
+    }
+  }
+  for(const c of cells){
+    const dx=c.x-b.x, dy=c.y-b.y, d=Math.hypot(dx,dy), reach=b.r*2.2;
+    if(d<reach && d>0.001){ const f=(1-d/reach)*GAS_POP; c.vx+=dx/d*f; c.vy+=dy/d*f; }
+  }
+  gasPopSound(b.r);
+  // 画面揺れ。小さい泡でいちいち揺れたら鬱陶しいので、大きい泡ほど強く長く
+  const k=b.r/GAS_RPOP;
+  shkA=Math.max(shkA, b.r*GAS_SHAKE);
+  shkT=Math.max(shkT, 0.10+0.24*k);
+  gas.splice(i,1);
+}
+const onBub=b=>cells.filter(c=>c.stick===b);
+function stepGas(dt,n){
+  if(!GASOFF){
+    gasAcc+=dt*GAS_PER*n;               // 湧く量は個体数に比例＝発酵が進むほど泡立つ
+    while(gasAcc>=1){ gasAcc-=1; spawnGas(); }
+  }
+  const rt=Math.sqrt(dt);
+  // 触れ合った泡は合体する。面積を足すので、合体するほど大きく育つ
+  if(GAS_MERGE) for(let i=gas.length-1;i>=0;i--){
+    for(let j=i-1;j>=0;j--){
+      const a=gas[i], b=gas[j];
+      if(Math.hypot(a.x-b.x,a.y-b.y) < (a.r+b.r)*0.86){
+        const big=a.area>=b.area?a:b, sml=big===a?b:a;
+        const w=sml.area/(big.area+sml.area);
+        big.x+=(sml.x-big.x)*w; big.y+=(sml.y-big.y)*w;
+        big.area+=sml.area; big.r=Math.sqrt(big.area/Math.PI);
+        for(const c of onBub(sml)){ c.stick=big; c.stickA=Math.atan2(c.y-big.y,c.x-big.x); }
+        gas.splice(gas.indexOf(sml),1);
+        i=Math.min(i,gas.length-1); break;
+      }
+    }
+  }
+  for(let i=gas.length-1;i>=0;i--){
+    const b=gas[i], load=onBub(b).length;
+    // 溶けているCO2を吸って育ち続ける。張り付いた酵母がCO2を出すので、載せているほど速く育つ
+    b.area+=GAS_FEED*b.feed*(1+load*GAS_FEED_Y)*dt;
+    b.r=Math.sqrt(b.area/Math.PI);            // 面積が一定速度で増える＝半径は √t で伸びる
+    // 漂う。真上から見ているので上下左右どの向きにも偏らない
+    const k=GAS_DRIFT*Math.sqrt(6/0.8)/(1+load*GAS_LOAD)/(1+b.r/40), dc=Math.exp(-dt/0.8);
+    b.vx=b.vx*dc+(Math.random()*2-1)*k*rt;
+    b.vy=b.vy*dc+(Math.random()*2-1)*k*rt;
+    b.x+=b.vx*dt; b.y+=b.vy*dt;
+    // 容器の中に留まる
+    const dx=b.x-cx, dy=b.y-cy, d=Math.hypot(dx,dy), lim=Math.max(0,VR-b.r-R0*(load?1.1:0.2));
+    if(d>lim && d>0.001){ b.x=cx+dx/d*lim; b.y=cy+dy/d*lim; b.vx*=-0.4; b.vy*=-0.4; }
+    if(b.r>=(b.rpop||GAS_RPOP)) popGas(b,i);  // 育ちすぎると耐えきれず弾ける（閾値は泡ごとにばらつく）
+  }
+}
+// 泡と酵母：吸着して運ばれる
+function gasStick(dt){
+  // ① 触れたら界面に吸着する（疎水性。事実上はがれない）。ただし界面が満員なら入れない
+  const cnt=new Map();
+  for(const c of cells) if(c.stick) cnt.set(c.stick,(cnt.get(c.stick)||0)+1);
+  for(const b of gas) for(const c of cells){
+    if(c.stick||c.dead) continue;        // 死体は泡に張り付かない
+    if(Math.hypot(c.x-b.x,c.y-b.y) < b.r+semiB(c)*0.95){
+      const minA=2*Math.asin(Math.min(0.98,semiB(c)/(b.r+semiB(c))));
+      if((cnt.get(b)||0) >= Math.floor(6.2832/minA)) continue;   // 満員＝入れない（押しのけられる）
+      c.stick=b; c.stickA=Math.atan2(c.y-b.y,c.x-b.x); c.vx=0; c.vy=0; c.stickT=0;
+      cnt.set(b,(cnt.get(b)||0)+1);
+    }
+  }
+  for(const b of gas){
+    const on=onBub(b);
+    if(!on.length) continue;
+    if(on.length>1){
+      // ② 横方向の毛管引力＝界面に捕まった粒子どうしは引き合い、寄り集まる
+      let sx=0, sy=0;
+      for(const c of on){ sx+=Math.cos(c.stickA); sy+=Math.sin(c.stickA); }
+      if(sx||sy){
+        const mean=Math.atan2(sy,sx), k=Math.min(1,GAS_CAP*dt);
+        for(const c of on){
+          let d=c.stickA-mean;
+          while(d>Math.PI)d-=6.2832; while(d<-Math.PI)d+=6.2832;
+          c.stickA-=d*k;
+        }
+      }
+      // ③ ただし重なれない＝隙間なく詰まった単層になる
+      on.sort((p,q)=>p.stickA-q.stickA);
+      for(let k=0;k<on.length;k++){
+        const c=on[k], nx=on[(k+1)%on.length];
+        const minA=2*Math.asin(Math.min(0.98,semiB(c)/(b.r+semiB(c))));
+        let d=nx.stickA-c.stickA; while(d<0)d+=6.2832;
+        if(d<minA && on.length*minA<6.2832){
+          const sh=(minA-d)*0.5; c.stickA-=sh; nx.stickA+=sh;
+        }
+      }
+    }
+    for(const c of on){
+      const R=b.r+semiB(c)*0.9;
+      c.x=b.x+Math.cos(c.stickA)*R; c.y=b.y+Math.sin(c.stickA)*R;
+      // 念のため容器の外へは出さない（泡に乗っていても液の中にいる）
+      const ex=c.x-cx, ey=c.y-cy, ed=Math.hypot(ex,ey), lim=VR-semiA(c)*0.86;
+      if(ed>lim && ed>0.001){ c.x=cx+ex/ed*lim; c.y=cy+ey/ed*lim; }
+      fitBud(c);                       // 泡に乗っている間も芽ははみ出させない
+      c.vx=0; c.vy=0; c.w=0;
+      // 長い方の軸を界面に沿わせる（その方が消せる界面が広い＝安定する）
+      let d=(c.stickA+Math.PI/2)-c.rot;
+      while(d>Math.PI)d-=6.2832; while(d<-Math.PI)d+=6.2832;
+      c.rot+=d*Math.min(1,6*dt);
+    }
+  }
+  // ④ 捕まらなかった酵母は、泡の後流に軽く押される
+  for(const b of gas) for(const c of cells){
+    if(c.stick) continue;
+    const dx=c.x-b.x, dy=c.y-b.y, d=Math.hypot(dx,dy), reach=b.r+semiA(c)*1.5;
+    if(d<reach && d>0.001){
+      const f=(1-d/reach)*GAS_PUSH*dt;
+      c.vx+=dx/d*f; c.vy+=dy/d*f-f*0.5;
+    }
+  }
+}
+
+// ---- 死滅 ----
+const deaths=[];
+function die(c,i){
+  // 死体は消さず「dead」にして残す＝場所を塞ぎ、CAPを圧迫し、首が探しにくくなる（負けの連鎖）
+  c.dead=true; c.deadT=0; c.stick=null; c.bud=0; c.over=0; c.vx=0; c.vy=0;
+  spawnGasAt(c.x,c.y);                 // 死体からもう一つ泡
+  // ★v60：死の瞬間の一括上昇は撤去（ユーザー要望）。アルコールは「ジタバタ中(危険域)」からのみ出る。
+  //   死ぬ酵母は既に危険域でトリクルを出し切っているので二重計上を避ける＝より自然。
+  dieSound();
+  elCnt.textContent=livingCount();
+}
+function livingCount(){ let n=0; for(const c of cells) if(!c.dead) n++; return n; }
+// ★汗＝弱った酵母がアルコールを出しているときに散らす代謝物のしずく。危険域の間だけ飛び散る。
+const sweat=[];
+function spawnSweat(x,y){
+  const a=rnd(0,6.2832), sp=rnd(46,118);
+  sweat.push({ x:x+Math.cos(a)*R0*0.42, y:y+Math.sin(a)*R0*0.42,
+    vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:1, r:rnd(3.2,5.6) });
+}
+// 指定位置から泡を1つ（死体から出るCO2）
+function spawnGasAt(x,y){
+  const a=rnd(0,6.28), r0=rnd(2.5,4);
+  gas.push({x:x+Math.cos(a)*R0*0.5, y:y+Math.sin(a)*R0*0.5,
+    r:r0, area:Math.PI*r0*r0, vx:0, vy:0, feed:rnd(0.75,1.3)});
+}
+function dieSound(){
+  try{
+    const a=actx(), t=a.currentTime;
+    const o=a.createOscillator(), g2=a.createGain();
+    o.type='sine';
+    o.frequency.setValueAtTime(300,t); o.frequency.exponentialRampToValueAtTime(90,t+0.34);
+    g2.gain.setValueAtTime(0.001,t); g2.gain.exponentialRampToValueAtTime(0.24,t+0.02);
+    g2.gain.exponentialRampToValueAtTime(0.001,t+0.4);
+    o.connect(g2).connect(a.destination); o.start(t); o.stop(t+0.42);
+  }catch(e){}
+}
+
+let cut=0;
+function split(c,nx,ny,cutAx){
+  const a=budAng(c), br=budR(c);
+  if(cutAx===undefined) cutAx=a+Math.PI/2;
+  const dx=Math.cos(a), dy=Math.sin(a);
+  // 満杯なら増える先が無い＝子は生まれないが、母は救われる（＝満杯は「守る」状態）
+  if(cells.length<CAP){
+    const kid=mkCell(nx,ny,Math.max(br,R0*0.34),a); // 子は長軸を進行方向に向けて飛び出す
+    kid.asp=c.asp;
+    kid.vx=dx*FLY; kid.vy=dy*FLY;                  // ★飛ぶ
+    kid.w=rnd(-2,2); kid.wob=1; kid.newT=0.9; kid.flash=1;   // 生まれた子も光る
+    kid.snapT=SNAP_DUR; kid.snapA=a;               // ★離れる向きへ伸びた状態から始まる
+    cells.push(kid);
+    threads.push({a:c,b:kid,ang:a,r:br,t:0});      // ★母と子をつなぐ糸＝これが伸びて切れる
+  }
+  c.vx-=dx*FLY*FLY_MOM; c.vy-=dy*FLY*FLY_MOM;
+  c.snapT=SNAP_DUR; c.snapA=a;                     // 母も逆向きに伸びる（引きちぎられた側）
+  c.bud=0; c.over=0; c.budK=rnd(0.75,1.3);
+  c.budOff=rnd(0,Math.PI*2);                      // 次の芽はまた別の場所から＝読めない
+  c.bgran=mkGran(3);                              // 次の芽の中身も作り直す
+  c.w+=rnd(-1.2,1.2); c.joyT=0.9;              // ちぎれた母＝うれしい
+  c.wob=1; c.flash=1;                          // 切られた母も光る＝どれを切ったか分かる
+  cutFx(nx,ny,cutAx);                          // 切断点の閃光＋数字バンプ
+  burst(nx,ny,br,cutAx);
+  popSound(cells.length);
+  cut++;
+  if(cut===1){ elHint.style.opacity='0'; started=true; runT=0; alc=0; }  // 最初のちぎりから計り始める＋アルコールも0から（開始前の放置で溜まったぶんを消す）
+  elCnt.textContent=livingCount();
+}
+
+// ---- 更新 ----
+let last=0, SLOWMO=1;   // SLOWMO は __dbg.slow(k) で変える（検証用・通常1）
+function step(dt){
+  const occ=cells.length, living=livingCount();   // 死体は場所(occ,CAP)を塞ぐが出芽はしない
+  const win=winNow();                             // 猶予も混雑連動（このフレームの占有で決まる）
+  // ★同時に出ていられる芽の数の上限（混雑ほど少ない）。今この瞬間に育ち中の芽の数を数え、
+  //   空きがあれば休んでいる細胞が新しく芽を出せる＝的が上限以上に増えない。
+  const budCap=Math.round(BUD_LO+(BUD_HI-BUD_LO)*Math.pow(Math.min(1,occ/CAP),BUD_CURVE));
+  let active=0; for(const c of cells) if(!c.dead && c.bud>0.001) active++;
+  // ★序盤ブースト：生きた個体が EARLY_N 未満のとき熟す速さを上げる（1匹で最大→EARLY_N匹で1倍）。テンポ改善。
+  const budBoost=1+EARLY_BOOST*Math.max(0,1-(living-1)/(EARLY_N-1));
+  for(let i=cells.length-1;i>=0;i--){
+    const c=cells[i];
+    c.flash=Math.max(0,c.flash-dt/0.22);           // 切られた光の減衰
+    if(c.snapT>0) c.snapT=Math.max(0,c.snapT-dt);  // ちぎれた瞬間の伸びが戻る
+    if(c.dead){ c.deadT+=dt; continue; }           // 死体は成長も出芽も死もしない（場所を塞ぐだけ）
+    c.r += (c.tr-c.r)*Math.min(1,GROW*dt);
+    // 満杯でも出芽は止まらない＝満杯は安全地帯ではなく「守り続ける状態」。ただし同時数は budCap まで。
+    if(c.r>R0*0.72){
+      if(c.bud>0.001){ c.bud=Math.min(1,c.bud+dt*BUD_SPEED*c.budK*budBoost); }              // 育ち中の芽は続行
+      else if(active<budCap){ c.bud=Math.min(1,c.bud+dt*BUD_SPEED*c.budK*budBoost); active++; } // 空きがあれば新規に芽を出す
+    }
+    // 熟してからの猶予。使い切ると母細胞ごと死滅
+    if(c.bud>=1){
+      c.over+=dt;
+      if(c.over>=win){ die(c,i); continue; }
+    }
+    // 束は熟すほど頻繁に来る。さらに死が近いほど速まる＝そのまま警告になる
+    const warn=c.over/win;
+    // ★弱った(ジタバタ中の)酵母は、死ぬ前からアルコールとCO2を控えめに出す（発酵ストレス＝より現実的。ユーザー案）。
+    //   早めに切れば0／粘る(危険域)ほど徐々に上乗せ。主源は死(die内の+1度)で、これはその現実感の足し。
+    if(warn>ALC_WARN0){
+      const s=(warn-ALC_WARN0)/(1-ALC_WARN0);
+      alc=Math.min(1, alc+ALC_RATE*s*dt);
+      if(Math.random() < s*GAS_DANGER*dt) spawnGasAt(c.x,c.y);   // 泡もこの時に出る
+    }
+    // ★汗（代謝物）は「弱り始め(warn>SWEAT_WARN0)」から散らす＝アルコール域より早く・多くの酵母から見える。
+    //   演出専用（アルコール量や難易度には一切影響しない）。危険域ほど激しく吹き出す。
+    if(warn>SWEAT_WARN0){
+      const sw=(warn-SWEAT_WARN0)/(1-SWEAT_WARN0);
+      const n=SWEAT_RATE*sw*sw*dt;                               // 期待個数（危険域ほど急増）
+      let cnt=Math.floor(n); if(Math.random()<n-cnt) cnt++;
+      for(let k=0;k<cnt;k++) spawnSweat(c.x,c.y);
+    }
+    c.beat=(c.beat+dt*(BURST_SLOW+(BURST_FAST-BURST_SLOW)*c.bud+warn*2.2))%1;
+    c.shiv+=dt*SHIV_HZ*6.2832;
+    brown(c.gran,dt); if(c.bud>0.02) brown(c.bgran,dt);
+    c.wob=Math.max(0,c.wob-dt*2.2);
+    if(c.stick) c.stickT+=dt;
+    c.newT=Math.max(0,c.newT-dt); c.joyT=Math.max(0,c.joyT-dt);
+    c.wobP+=dt*WOB;
+  }
+  // アルコール満タン＝ゲームオーバー（時間切れとは別の敗北）
+  if(alc>=1 && started && !finished) finish(true);
+  stepGas(dt,living); gasStick(dt);
+  // 生きた酵母が全滅＝出芽する個体がいない。1匹から出直し（死体は残る）。
+  // ★started条件を外す：開始前(最初のちぎり前)に初期酵母が死ぬと復activできず出芽ゼロ・タイマー停止で詰むため。
+  if(!finished && livingCount()===0){ const c=mkCell(cx,cy,R0); c.r=R0; cells.push(c); }
+  for(let i=deaths.length-1;i>=0;i--){
+    const d=deaths[i]; d.life-=dt*1.7; if(d.life<=0) deaths.splice(i,1);
+  }
+  // ★汗のしずく：外へ飛び散り、粘性で減速しながら薄れて消える
+  for(let i=sweat.length-1;i>=0;i--){
+    const s=sweat[i];
+    s.x+=s.vx*dt; s.y+=s.vy*dt;
+    s.vx*=Math.pow(0.84,dt*60); s.vy*=Math.pow(0.84,dt*60);
+    s.life-=dt*1.5;
+    if(s.life<=0) sweat.splice(i,1);
+  }
+  for(let i=cutflash.length-1;i>=0;i--){
+    cutflash[i].life-=dt*5.5; if(cutflash[i].life<=0) cutflash.splice(i,1);
+  }
+  for(let i=taps.length-1;i>=0;i--){
+    taps[i].life-=dt*4; if(taps[i].life<=0) taps.splice(i,1);
+  }
+  // 反発（グリッド／卵形は2円のカプセルで近似）
+  const cell=R0*2.8, grid=new Map();
+  const key=(i,j)=>i+','+j;
+  for(let i=0;i<cells.length;i++){
+    const c=cells[i], gi=Math.floor(c.x/cell), gj=Math.floor(c.y/cell), k=key(gi,gj);
+    let a=grid.get(k); if(!a){a=[];grid.set(k,a);} a.push(i);
+  }
+  for(let i=0;i<cells.length;i++){
+    const c=cells[i], gi=Math.floor(c.x/cell), gj=Math.floor(c.y/cell);
+    for(let oi=-1;oi<=1;oi++) for(let oj=-1;oj<=1;oj++){
+      const a=grid.get(key(gi+oi,gj+oj)); if(!a) continue;
+      for(const j of a){
+        if(j<=i) continue;
+        const o=cells[j];
+        const cf=foc(c), of=foc(o), cb=semiB(c), ob=semiB(o);
+        const ccs=Math.cos(c.rot)*cf, csn=Math.sin(c.rot)*cf;
+        const ocs=Math.cos(o.rot)*of, osn=Math.sin(o.rot)*of;
+        for(let s=-1;s<=1;s+=2) for(let u=-1;u<=1;u+=2){
+          const px=c.x+ccs*s, py=c.y+csn*s, qx=o.x+ocs*u, qy=o.y+osn*u;
+          let dx=qx-px, dy=qy-py, d=Math.hypot(dx,dy);
+          const min=(cb+ob)*0.92;
+          if(d<min && d>0.001){
+            const f=(min-d)/min*REPEL*0.55;
+            dx/=d; dy/=d;
+            // 泡に吸着した細胞は動かない（界面に捕まる力は他の力と桁が違う）
+            if(!c.stick){ c.vx-=dx*f; c.vy-=dy*f;
+              c.w -= ((px-c.x)*(-dy*f)-(py-c.y)*(-dx*f))/(c.r*c.r*0.5); }
+            if(!o.stick){ o.vx+=dx*f; o.vy+=dy*f;
+              o.w += ((qx-o.x)*( dy*f)-(qy-o.y)*( dx*f))/(o.r*o.r*0.5); }
+          }
+        }
+      }
+    }
+  }
+  for(const c of cells){
+    if(c.stick) continue;             // 泡に運ばれている間は泡が位置を決める
+    const sp=Math.hypot(c.vx,c.vy);   // 粘性支配なのでこれ以上は速く動けない
+    if(sp>VMAX){ c.vx=c.vx/sp*VMAX; c.vy=c.vy/sp*VMAX; }
+    c.x+=c.vx*dt; c.y+=c.vy*dt;
+    c.vx*=Math.pow(DRAG,dt*60); c.vy*=Math.pow(DRAG,dt*60);
+    c.rot+=c.w*dt; c.w*=Math.pow(SPIN_DRAG,dt*60);
+    // 容器
+    const dx=c.x-cx, dy=c.y-cy, d=Math.hypot(dx,dy), lim=VR-semiA(c)*0.86;
+    if(d>lim && d>0.001){
+      const nx=dx/d, ny=dy/d;
+      c.x=cx+nx*lim; c.y=cy+ny*lim;
+      const vn=c.vx*nx+c.vy*ny;
+      if(vn>0){ c.vx-=nx*vn*1.5; c.vy-=ny*vn*1.5; }
+    }
+    fitBud(c);
+  }
+  for(let i=bits.length-1;i>=0;i--){
+    const b=bits[i]; b.x+=b.vx*dt; b.y+=b.vy*dt; b.vx*=0.90; b.vy*=0.90;
+    b.life-=dt*2.4; if(b.life<=0) bits.splice(i,1);
+  }
+  for(let i=rings.length-1;i>=0;i--){
+    const r=rings[i]; r.r+=dt*110; r.life-=dt*3.2; if(r.life<=0) rings.splice(i,1);
+  }
+  for(let i=trail.length-1;i>=0;i--){ trail[i].life-=dt*3.4; if(trail[i].life<=0) trail.splice(i,1); }
+  for(let i=threads.length-1;i>=0;i--){ threads[i].t+=dt; if(threads[i].t>=THR_DUR) threads.splice(i,1); }
+}
+
+// ---- 描画 ----
+// warn(0..1)＝死が近いほど色が抜けて青ざめる
+function body(x,y,a,b,rot,sq,shade,hue,warn){
+  warn=warn||0;
+  const s=1-warn*0.72, l=warn*8;
+  g.save(); g.translate(x,y); g.rotate(rot); g.scale(1+sq,1-sq*0.9);
+  const r=(a+b)/2;
+  const gr=g.createRadialGradient(-a*0.26,-b*0.34,r*0.1,0,0,r*1.15);
+  gr.addColorStop(0,`hsl(${44+hue} ${72*s}% ${93-shade*8-l}%)`);
+  gr.addColorStop(1,`hsl(${38+hue} ${54*s}% ${76-shade*14-l}%)`);
+  g.fillStyle=gr; g.beginPath(); g.ellipse(0,0,a,b,0,0,6.2832); g.fill();
+  g.strokeStyle=`hsla(${30+hue} ${40*s}% 52% / .38)`; g.lineWidth=Math.max(1,r*0.075); g.stroke();
+  g.restore();
+}
+// 細胞の中身＝顆粒と液胞。体に固定した座標なので体と一緒に回る
+function grains(x,y,a,b,rot,sq,arr,hue,amt){
+  if(a<R0*0.42) return;                       // 小さすぎる芽では省略
+  g.save(); g.translate(x,y); g.rotate(rot); g.scale(1+sq,1-sq*0.9);
+  g.beginPath(); g.ellipse(0,0,a*0.93,b*0.93,0,0,6.2832); g.clip();  // 膜からはみ出さない
+  const m=(a+b)/2;
+  for(const q of arr){
+    const qx=q.x*a, qy=q.y*b, qr=q.r*m;
+    if(q.v){                                  // 液胞＝大きく淡い
+      g.fillStyle=`hsla(${48+hue} 74% 97% / ${VAC_A*amt})`;
+      g.beginPath(); g.arc(qx,qy,qr,0,6.2832); g.fill();
+      g.strokeStyle=`hsla(${32+hue} 40% 60% / ${0.16*amt})`;
+      g.lineWidth=Math.max(0.5,qr*0.12); g.stroke();
+    }else{                                    // 顆粒
+      g.fillStyle=`hsla(${34+hue} 48% 56% / ${GRAN_A*amt})`;
+      g.beginPath(); g.arc(qx,qy,qr,0,6.2832); g.fill();
+    }
+  }
+  g.restore();
+}
+// ---- 顔 ----
+// 平常時は個体差（FACE_MIX から1つ持つ）。ただし状態があればそちらが優先＝そのとき出る顔。
+// ★前作v94の教訓：ネガティブな顔を平常時に混ぜると清潔感が落ちる。so 平常はぜんぶ感じのいい顔。
+const FACE_MIX=['A0','A0','A0','A0','A2','A2','A2','A1','A1','A7','A5','A4','A8','A3','A6'];
+const INK='rgba(90,64,40,.82)', INKS='rgba(90,64,40,.75)';
+function eDot(r,x,y,s){ s=s||1; g.fillStyle=INK; g.beginPath(); g.arc(x,y,r*0.14*s,0,6.2832); g.fill(); }
+function eBig(r,x,y){ g.fillStyle=INK; g.beginPath(); g.arc(x,y,r*0.20,0,6.2832); g.fill();
+  g.fillStyle='rgba(255,255,255,.9)'; g.beginPath(); g.arc(x-r*0.06,y-r*0.07,r*0.07,0,6.2832); g.fill(); }
+function eArc(r,x,y){ g.strokeStyle=INKS; g.lineWidth=Math.max(1,r*0.075); g.lineCap='round';
+  g.beginPath(); g.arc(x,y+r*0.06,r*0.13,1.15*Math.PI,1.85*Math.PI); g.stroke(); }
+function eLine(r,x,y){ g.strokeStyle=INKS; g.lineWidth=Math.max(1,r*0.07); g.lineCap='round';
+  g.beginPath(); g.moveTo(x-r*0.11,y); g.lineTo(x+r*0.11,y); g.stroke(); }
+function eHalf(r,x,y){ g.fillStyle=INK; g.beginPath(); g.arc(x,y,r*0.14,Math.PI,0); g.fill();
+  g.strokeStyle=INKS; g.lineWidth=Math.max(1,r*0.06);
+  g.beginPath(); g.moveTo(x-r*0.14,y); g.lineTo(x+r*0.14,y); g.stroke(); }
+function eX(r,x,y){ g.strokeStyle=INKS; g.lineWidth=Math.max(1,r*0.075); g.lineCap='round';
+  const k=r*0.10; g.beginPath(); g.moveTo(x-k,y-k); g.lineTo(x+k,y+k);
+  g.moveTo(x+k,y-k); g.lineTo(x-k,y+k); g.stroke(); }
+function eSq(r,x,y){ g.strokeStyle=INKS; g.lineWidth=Math.max(1,r*0.075); g.lineCap='round';
+  g.beginPath(); g.arc(x,y-r*0.10,r*0.13,0.2*Math.PI,0.8*Math.PI); g.stroke(); }
+function mSmile(r,y,w){ w=w||0.26; g.strokeStyle=INKS; g.lineWidth=Math.max(1,r*0.075); g.lineCap='round';
+  g.beginPath(); g.arc(0,y,r*w,0.28*Math.PI,0.72*Math.PI); g.stroke(); }
+function mBig(r,y){ g.fillStyle=INK; g.beginPath(); g.arc(0,y,r*0.20,0,Math.PI); g.fill(); }
+function mO(r,y,s){ s=s||1; g.fillStyle=INK; g.beginPath(); g.arc(0,y,r*0.09*s,0,6.2832); g.fill(); }
+function mFlat(r,y){ g.strokeStyle=INKS; g.lineWidth=Math.max(1,r*0.075); g.lineCap='round';
+  g.beginPath(); g.moveTo(-r*0.12,y); g.lineTo(r*0.12,y); g.stroke(); }
+function mWave(r,y){ g.strokeStyle=INKS; g.lineWidth=Math.max(1,r*0.07); g.lineCap='round';
+  g.beginPath(); g.moveTo(-r*0.16,y); g.quadraticCurveTo(-r*0.05,y-r*0.09,0,y);
+  g.quadraticCurveTo(r*0.05,y+r*0.09,r*0.16,y); g.stroke(); }
+function cheek(r,ex,y){ g.fillStyle='rgba(232,150,150,.34)';
+  g.beginPath(); g.arc(-ex,y,r*0.13,0,6.2832); g.fill();
+  g.beginPath(); g.arc( ex,y,r*0.13,0,6.2832); g.fill(); }
+function face(x,y,r,rot,sq,id){
+  if(r<R0*0.44) return;
+  const E=r*0.30, EY=-r*0.06;
+  g.save(); g.translate(x,y); g.rotate(rot); g.scale(1+sq,1-sq*0.9);
+  switch(id){
+    case 'A1': eBig(r,-E,EY); eBig(r,E,EY); mSmile(r,r*0.14); cheek(r,E*1.6,r*0.22); break;
+    case 'A2': eArc(r,-E,EY); eArc(r,E,EY); mSmile(r,r*0.14); cheek(r,E*1.5,r*0.20); break;
+    case 'A3': eLine(r,-E,EY); eLine(r,E,EY); mSmile(r,r*0.12,0.20); cheek(r,E*1.5,r*0.20); break;
+    case 'A4': eArc(r,-E,EY); eDot(r,E,EY); mSmile(r,r*0.12); cheek(r,E*1.5,r*0.20); break;
+    case 'A5': eDot(r,-E*1.25,EY,1.15); eDot(r,E*1.25,EY,1.15); mO(r,r*0.16); cheek(r,E*1.7,r*0.22); break;
+    case 'A6': eDot(r,-E,EY); eDot(r,E,EY); mFlat(r,r*0.18); break;
+    case 'A7': eDot(r,-E,EY); eDot(r,E,EY); mBig(r,r*0.10); cheek(r,E*1.55,r*0.24); break;
+    case 'A8': eDot(r,-E*0.7,EY); eDot(r,E*0.7,EY); mSmile(r,r*0.14,0.22); cheek(r,E*1.5,r*0.20); break;
+    case 'B1': eBig(r,-E*1.1,EY); eBig(r,E*1.1,EY); mO(r,r*0.18,0.9); break;               // きょとん
+    case 'B2': eSq(r,-E,EY); eSq(r,E,EY); mFlat(r,r*0.18); cheek(r,E*1.5,r*0.20); break;   // 力み
+    case 'B3': eHalf(r,-E,EY); eHalf(r,E,EY); mWave(r,r*0.20); break;                      // ぐったり
+    case 'B4': eBig(r,-E,EY); eBig(r,E,EY); mO(r,r*0.18,1.6); break;                       // びっくり
+    case 'B5': eX(r,-E,EY); eX(r,E,EY); mWave(r,r*0.20); break;                            // ばつ印
+    case 'B6': eArc(r,-E,EY); eArc(r,E,EY); mBig(r,r*0.10); cheek(r,E*1.6,r*0.24); break;  // うれしい
+    default:   eDot(r,-E,EY); eDot(r,E,EY); mSmile(r,r*0.12); cheek(r,E*1.5,r*0.20);       // A0
+  }
+  g.restore();
+}
+// いまこの酵母が浮かべる顔。状態が優先、無ければ持って生まれた顔
+function faceOf(c,warn){
+  if(warn>0.45)       return 'B3';   // 死にかけ＝ぐったり
+  if(c.stick&&c.stickT<1.2) return "B4";  // 泡に張り付けられた瞬間だけ びっくり（ずっとだと個性が消える）
+  if(c.bud>=CUT_MIN)  return 'B2';   // 芽が熟してふるふる＝力み
+  if(c.joyT>0)        return "B6";   // ちぎれた直後の母＝うれしい
+  if(c.newT>0)        return "B1";   // 生まれたての子＝きょとん
+  return c.faceId;
+}
+const necks=[];
+function draw(t){
+  necks.length=0;
+  g.clearRect(0,0,W,H);
+  g.save();
+  if(shkT>0){                       // 泡の破裂＝画面が揺れる（減衰する速い揺れ）
+    const k=Math.min(1,shkT/0.34), a=Math.pow(k,1.4)*shkA;
+    g.translate(Math.sin(t*112)*a, Math.cos(t*87)*a);
+  }
+  // 容器の液。★アルコールが濃くなるほど生成り→冷たい青に染まる（＝敗北ゲージ。死体・泡と併せて失敗が見える）
+  //   寒色（ユーザー要望）。高アルコール域で b>g>r になり、深い青＝アルコールが満ちる冷たさ。
+  g.save();
+  const A=alc*alc;   // 中盤は控えめ・終盤で一気に濃く（0.5では四分の一しか染まらない）
+  // ★初期(alc=0)から淡い青にする（生成りだとグレーに見えるため）。そこから深い青へ深まる。
+  const ir=Math.round(222-A*87),  ig=Math.round(238-A*58),  ib=Math.round(250-A*20);   // 中心＝淡い水色→水色
+  const or=Math.round(195-A*150), og=Math.round(222-A*127), ob=Math.round(244-A*69);   // 縁＝淡い青→深い青
+  const vg=g.createRadialGradient(cx-VR*0.3,cy-VR*0.35,VR*0.2,cx,cy,VR*1.05);
+  vg.addColorStop(0,`rgb(${ir},${ig},${ib})`); vg.addColorStop(1,`rgb(${or},${og},${ob})`);
+  // ★お椀の下に柔らかい影＝ベージュ地から浮き上がらせる（“貼っただけのシール”感を消す）
+  g.save();
+  g.shadowColor='rgba(120,110,92,0.26)'; g.shadowBlur=VR*0.10; g.shadowOffsetY=VR*0.035;
+  g.fillStyle=vg; g.beginPath(); g.arc(cx,cy,VR,0,6.2832); g.fill();
+  g.restore();
+  // 縁：細い締め線＋内側の淡いハイライトで“器のふち”らしい厚みを出す
+  g.strokeStyle=`rgba(${150-A*90},${170-A*80},${200-A*60},.34)`; g.lineWidth=1.5;
+  g.beginPath(); g.arc(cx,cy,VR,0,6.2832); g.stroke();
+  g.strokeStyle='rgba(255,255,255,0.34)'; g.lineWidth=1.5;
+  g.beginPath(); g.arc(cx,cy,VR-2.4,0,6.2832); g.stroke();
+  // アルコール危険域＝冷たい青いビネットが脈打つ
+  if(A>0.6){ const k=(A-0.6)/0.4, p=0.5+0.5*Math.abs(Math.sin(t*(3+k*4)));
+    const vv=g.createRadialGradient(cx,cy,VR*0.4,cx,cy,VR*1.02);
+    vv.addColorStop(0,'rgba(40,90,210,0)'); vv.addColorStop(1,`rgba(40,90,210,${k*0.5*p})`);
+    g.fillStyle=vv; g.beginPath(); g.arc(cx,cy,VR,0,6.2832); g.fill(); }
+  g.restore();
+  // ★時計＝グルコース君。容器の縁に並び、糖が食われて分子が減っていく（時間切れ＝糖ゼロ）
+  //   v39：密度2倍（N60＝60秒で1個/秒）。★いきなり消えるのをやめ、いま食われている1個だけを
+  //   点滅＋だんだん縮んで薄くする＝その分子が消えていく途中が見える＝残り時間が連続的に分かる。
+  {
+    const N=60, left=started?Math.max(0,1-runT/TIME):1, urg=left<0.18;
+    const leftN=left*N;                        // 残っている分子数（連続値）
+    const eating=Math.ceil(leftN)-1;           // いま食われている分子＝最後に残る1個のindex
+    const prog=leftN-eating;                   // その分子の残り 1(丸ごと)→0(消える寸前)
+    for(let i=0;i<N;i++){
+      if(i>eating) continue;                                   // 食われ終わった分子は無い
+      const frac=i/N;
+      const a=-Math.PI/2 + frac*6.2832;
+      const gx=cx+Math.cos(a)*VR, gy=cy+Math.sin(a)*VR;
+      let gr=R0*0.30, alpha=1;   // ★小さく＝縁を彩る細かい点列に（v75：0.40→0.30。装飾過多を抑える）
+      const eatingThis = started && left<1 && i===eating;
+      if(eatingThis){                                          // ★食われ中の1個＝点滅しながら縮んで薄く
+        const blink=0.55+0.45*Math.sin(t*9);                  // ちかちか（注意を引く）
+        gr*=0.5+0.5*prog;                                     // 残りぶんだけ小さくなる＝連続的な目盛り
+        alpha=(0.35+0.65*prog)*blink;                         // 残りぶんだけ薄く＋点滅
+      }else if(urg){                                           // 残りわずか＝全体がゆっくり脈打つ
+        alpha=0.6+0.4*Math.abs(Math.sin(t*5+i));
+      }
+      // 六角形のグルコース君（ピンク）
+      g.save(); g.translate(gx,gy); g.rotate(a+Math.PI/2);
+      g.beginPath();
+      for(let k=0;k<6;k++){ const th=k/6*6.2832; const px=Math.cos(th)*gr, py=Math.sin(th)*gr;
+        k?g.lineTo(px,py):g.moveTo(px,py); }
+      g.closePath();
+      g.fillStyle=(urg||eatingThis)?`hsla(350 60% 76% / ${alpha})`:'hsl(344 44% 85%)';   // 低彩度の淡いピンク＝上品に
+      g.fill();
+      g.strokeStyle=`hsla(340 30% 64% / ${0.34*alpha})`; g.lineWidth=1; g.stroke();
+      g.fillStyle=`rgba(110,80,88,${0.55*alpha})`;             // ちいさな目（控えめに）
+      g.beginPath(); g.arc(-gr*0.26,-gr*0.05,gr*0.12,0,6.2832); g.fill();
+      g.beginPath(); g.arc( gr*0.26,-gr*0.05,gr*0.12,0,6.2832); g.fill();
+      g.restore();
+    }
+  }
+
+  for(const c of cells){
+    if(c.dead){   // 死体＝灰色でそのまま残る。★顔は無い（＝死んでいるのが一目で分かる）
+      const shade=(c.y-cy)/VR*-0.5+0.5;
+      g.save(); g.translate(c.x,c.y); g.rotate(c.rot);
+      const gr=g.createRadialGradient(-semiA(c)*0.26,-semiB(c)*0.34,c.r*0.1,0,0,c.r*1.15);
+      gr.addColorStop(0,`hsl(40 8% ${70-shade*8}%)`);
+      gr.addColorStop(1,`hsl(38 6% ${58-shade*12}%)`);
+      g.fillStyle=gr; g.beginPath(); g.ellipse(0,0,semiA(c),semiB(c),0,0,6.2832); g.fill();
+      g.strokeStyle='rgba(90,84,74,.28)'; g.lineWidth=Math.max(1,c.r*0.07); g.stroke();
+      // 中身の粒だけ薄く残す（顔は描かない）
+      g.beginPath(); g.ellipse(0,0,semiA(c)*0.93,semiB(c)*0.93,0,0,6.2832); g.clip();
+      for(const q of c.gran){ g.fillStyle=`rgba(90,84,74,${q.v?0.10:0.16})`;
+        g.beginPath(); g.arc(q.x*semiA(c),q.y*semiB(c),q.r*c.r,0,6.2832); g.fill(); }
+      g.restore();
+      continue;
+    }
+    const sq=Math.sin(c.wobP)*c.wob*0.16;
+    const shade=(c.y-cy)/VR*-0.5+0.5;
+    const ang=budAng(c), nd=neckD(c);
+    const warn=Math.min(1,c.over/winNow());   // 死までの近さ＝色が抜ける／首が赤くなる
+    // ふるふる：首(nx,ny)を支点に、新芽が小刻みに震える。束の窓(bt)が開いている間だけ
+    const bt=burstGate(c.beat)*beatEnv(c);
+    const car =Math.sin(c.shiv)*0.62+Math.sin(c.shiv*1.63+1.1)*0.38;   // 揺れの中身（速い）
+    const car2=Math.sin(c.shiv*0.87+2.3)*0.6+Math.sin(c.shiv*1.31)*0.4;
+    const th=car*SHIV_ANG*bt;                        // 首の振れ＝ふるふる
+    const ba=ang+th;
+    let nx=c.x+Math.cos(ang)*nd, ny=c.y+Math.sin(ang)*nd;
+    const push=(0.5+0.5*car2)*SHIV_PUSH*bt;          // 震えながら外へ押し出す
+    const L=(budD(c)-nd)*(1+push);
+    let bx=nx+Math.cos(ba)*L, by=ny+Math.sin(ba)*L;
+    // 母細胞の揺り返し（作用反作用ぶんだけ、わずかに引かれる）
+    const rk=push*(budD(c)-nd)*SHIV_MOM;
+    let X=c.x-Math.cos(ang)*rk, Y=c.y-Math.sin(ang)*rk;
+    // ★死にかけのジタバタ（見た目だけ・物理には触れないので容器から出ない）。末期ほど激しく速い
+    let jx=0, jy=0;
+    if(warn>DIE_ON){
+      const q=warn*warn, f=(DIE_BLO+warn*(DIE_BHI-DIE_BLO))*3;   // 震えの速さ＝点滅と連動して速まる
+      jx=Math.sin(t*f + c.wobP)*q*DIE_JIT;
+      jy=Math.cos(t*f*1.17 + c.wobP*1.7)*q*DIE_JIT;
+    }
+    X+=jx; Y+=jy; bx+=jx; by+=jy; nx+=jx; ny+=jy;
+    c.jx=jx; c.jy=jy;                 // 当たり判定(slice)を同じだけずらして首の見た目と一致させる
+    if(probe && c===cells[0]) probe={bx,by,bt,X,Y,bud:c.bud};
+    // ★ちぎれた瞬間は離れる向きに伸びている（面積は保つので細くなる）。
+    //   減衰する余弦なので、伸び→行き過ぎて潰れ→戻る＝「ぷるん」と1回だけ揺り返す
+    let snapped=false;
+    if(c.snapT>0){
+      const tt=SNAP_DUR-c.snapT;
+      const e=SNAP_ST*Math.exp(-tt/0.10)*Math.cos(6.2832*SNAP_HZ*tt);
+      g.save(); g.translate(X,Y); g.rotate(c.snapA); g.scale(1+e,1/(1+e));
+      g.rotate(-c.snapA); g.translate(-X,-Y); snapped=true;
+    }
+    // 芽（先に描く＝親の後ろ）
+    if(c.bud>0.02){
+      const br=budR(c), bA=budA(c), bB=br/Math.sqrt(budAsp(c));
+      const ready=c.bud>=CUT_MIN;
+      body(bx,by,bA,bB,ba,0,shade,c.hue,warn);
+      grains(bx,by,bA,bB,ba,0,c.bgran,c.hue,c.bud);  // 芽の中身は熟すほど濃く
+      if(ready) face(bx,by,br,0,0,"B1");             // 芽＝生まれる前なので きょとん。顔は正立
+    }
+    body(X,Y,semiA(c),semiB(c),c.rot,sq,shade,c.hue,warn);
+    grains(X,Y,semiA(c),semiB(c),c.rot,sq,c.gran,c.hue,1);
+    face(X,Y,c.r,0,sq,faceOf(c,warn));
+    if(snapped) g.restore();          // 伸びの変形をここで閉じる（首は等倍で描きたいので）
+    // ★カラータイマー：死にかけは赤く点滅する。warn が上がるほど点滅が速く・濃くなる（末期は明滅）。
+    if(warn>DIE_ON){
+      const bf=DIE_BLO+warn*(DIE_BHI-DIE_BLO);                 // 点滅の速さ（Hz）
+      const blink=0.5+0.5*Math.sin(t*6.2832*bf + c.wobP);
+      g.save(); g.globalAlpha=warn*blink*DIE_RED;
+      g.fillStyle='hsl(354 92% 55%)';
+      g.beginPath(); g.ellipse(X,Y,semiA(c)*0.96,semiB(c)*0.96,c.rot,0,6.2832); g.fill();
+      g.restore();
+    }
+    // 切られた瞬間は白く光る＝混雑でも「これを切った」が分かる。
+    // ★伸びの変形の“外”で描く：中に入れると光まで1.4倍に伸びて白い塊になり、
+    //   肝心の「千切れる形」を隠してしまう（実測のスクショで発覚）。役割は形でなく所在の明示。
+    if(c.flash>0){
+      g.save(); g.globalAlpha=c.flash*0.5; g.globalCompositeOperation='lighter';
+      g.fillStyle='rgba(255,252,240,0.9)';
+      g.beginPath(); g.ellipse(X,Y,semiA(c)*1.02,semiB(c)*1.02,c.rot,0,6.2832); g.fill();
+      g.restore();
+    }
+    // 首(ちぎる場所)は最前面パスにまとめて描く＝他の酵母に隠れない（下の necks へ）
+    if(c.bud>0.02){
+      const br=budR(c), ready=c.bud>=CUT_MIN;
+      necks.push({nx,ny,ba,br,bt,warn,ready});
+    }
+  }
+  // ★首を最後にまとめて最前面で描く＝混雑で山になっても金のバーが常に見える（狙える）
+  for(const k of necks){
+    const half=k.br*0.72, ox=-Math.sin(k.ba)*half, oy=Math.cos(k.ba)*half;
+    g.save(); g.lineCap='round';
+    if(k.ready){   // 切れる首は縁取り付きでくっきり＝混雑でも埋もれない
+      g.strokeStyle='rgba(120,80,20,.5)';
+      g.lineWidth=Math.max(2.4,k.br*0.34*(1-k.bt*0.30)+2);
+      g.beginPath(); g.moveTo(k.nx+ox,k.ny+oy); g.lineTo(k.nx-ox,k.ny-oy); g.stroke();
+    }
+    g.strokeStyle= k.ready ? `hsla(${44-k.warn*36} 95% ${58-k.warn*6}% / ${0.7+k.bt*0.3})`
+                           : `hsla(36 42% 58% / ${0.24+k.bt*0.26})`;
+    g.lineWidth=Math.max(1.4,k.br*(k.ready?0.34:0.22)*(1-k.bt*0.30));
+    g.beginPath(); g.moveTo(k.nx+ox,k.ny+oy); g.lineTo(k.nx-ox,k.ny-oy); g.stroke();
+    g.restore();
+  }
+  // ★ちぎれた糸＝母と子をつなぐ細胞質。離れるほど伸び、中央がくびれ、細くなって切れる。
+  //   首と同じく最前面に描く＝山になっていても「いま切れた」が読める（v30と同じ理由）
+  for(const th of threads){
+    const A=th.a, B=th.b, u=th.t/THR_DUR;
+    const dx=B.x-A.x, dy=B.y-A.y, d=Math.hypot(dx,dy);
+    if(d<0.5) continue;
+    const ux=dx/d, uy=dy/d, qx=-uy, qy=ux;
+    // 端は体に少し埋める＝糸が体から生えて見える
+    const ax=A.x+ux*semiB(A)*0.55, ay=A.y+uy*semiB(A)*0.55;
+    const bx2=B.x-ux*semiB(B)*0.55, by2=B.y-uy*semiB(B)*0.55;
+    const mx=(ax+bx2)/2, my=(ay+by2)/2;
+    const k=Math.pow(1-u,1.5);                    // 切れる瞬間に0へ
+    const w0=Math.max(0.6,th.r*THR_W*k), wm=w0*0.34;   // 中央がくびれる＝ちぎれかけ
+    g.save();
+    g.fillStyle=`hsla(44 74% 86% / ${0.55+0.4*k})`;
+    g.beginPath();
+    g.moveTo(ax+qx*w0,ay+qy*w0);
+    g.quadraticCurveTo(mx+qx*wm,my+qy*wm,bx2+qx*w0*0.8,by2+qy*w0*0.8);
+    g.lineTo(bx2-qx*w0*0.8,by2-qy*w0*0.8);
+    g.quadraticCurveTo(mx-qx*wm,my-qy*wm,ax-qx*w0,ay-qy*w0);
+    g.closePath(); g.fill();
+    g.strokeStyle=`hsla(40 60% 60% / ${0.30*k})`; g.lineWidth=Math.max(0.6,w0*0.16); g.stroke();
+    g.restore();
+  }
+  // 炭酸ガスの泡。酵母より手前＝立ち上ってくるのが必ず見える（見えない邪魔は理不尽になる）
+  for(const b of gas){
+    g.save();
+    const gr=g.createRadialGradient(b.x-b.r*0.3,b.y-b.r*0.35,b.r*0.1,b.x,b.y,b.r);
+    gr.addColorStop(0,'rgba(255,255,255,.62)');
+    gr.addColorStop(0.7,'rgba(255,255,255,.16)');
+    gr.addColorStop(1,'rgba(255,255,255,.30)');
+    g.fillStyle=gr; g.beginPath(); g.arc(b.x,b.y,b.r,0,6.2832); g.fill();
+    g.strokeStyle='rgba(150,140,115,.30)'; g.lineWidth=1; g.stroke();
+    g.fillStyle='rgba(255,255,255,.85)';   // ハイライト（巨大化しても白玉が肥大しないよう頭打ち）
+    g.beginPath(); g.arc(b.x-b.r*0.34,b.y-b.r*0.38,Math.min(b.r*0.20,7),0,6.2832); g.fill();
+    g.restore();
+  }
+  // ★汗＝弱った酵母の代謝物。淡い水色のしずくが飛び散る＝アルコールを出している最中が直感的に分かる
+  for(const s of sweat){
+    const k=Math.min(1,s.life);
+    const rr=s.r*(0.55+0.45*k);
+    g.save();
+    const gr=g.createRadialGradient(s.x-rr*0.3,s.y-rr*0.35,rr*0.1,s.x,s.y,rr);
+    gr.addColorStop(0,`rgba(214,240,255,${0.95*k})`);
+    gr.addColorStop(0.6,`rgba(120,192,238,${0.78*k})`);
+    gr.addColorStop(1,`rgba(70,155,222,${0.22*k})`);
+    g.fillStyle=gr; g.beginPath(); g.arc(s.x,s.y,rr,0,6.2832); g.fill();
+    g.strokeStyle=`rgba(90,165,225,${0.4*k})`; g.lineWidth=1; g.stroke();   // 縁で背景から浮かせる
+    g.fillStyle=`rgba(255,255,255,${0.85*k})`;   // ハイライト
+    g.beginPath(); g.arc(s.x-rr*0.32,s.y-rr*0.36,rr*0.34,0,6.2832); g.fill();
+    g.restore();
+  }
+  // 死滅：色が抜けて、縮んで消える
+  for(const d of deaths){
+    const k=d.life, s=0.35+0.65*k;
+    g.save(); g.translate(d.x,d.y); g.rotate(d.rot);
+    g.fillStyle=`hsla(${36+d.hue} ${14*k}% ${62+(1-k)*14}% / ${k*0.75})`;
+    g.beginPath(); g.ellipse(0,0,d.a*s,d.b*s,0,0,6.2832); g.fill();
+    g.restore();
+    g.save(); g.globalAlpha=k*0.9;
+    face(d.x,d.y,(d.a+d.b)/2*s,0,0,'B5');   // 死んだ瞬間＝ばつ印
+    g.restore();
+  }
+  for(const b of bits){
+    g.fillStyle=`hsla(40 62% 70% / ${b.life})`;
+    g.beginPath(); g.arc(b.x,b.y,b.r,0,6.2832); g.fill();
+  }
+  // 切断点の閃光＝切った瞬間に白い一閃（刃の向きに沿った線＋弾ける光。最前面）
+  for(const f of cutflash){
+    const k=f.life, R=R0*(0.6+(1-k)*1.6);
+    g.save(); g.globalCompositeOperation='lighter';
+    const gr=g.createRadialGradient(f.x,f.y,0,f.x,f.y,R);
+    gr.addColorStop(0,`rgba(255,255,250,${k*0.95})`);
+    gr.addColorStop(1,'rgba(255,250,220,0)');
+    g.fillStyle=gr; g.beginPath(); g.arc(f.x,f.y,R,0,6.2832); g.fill();
+    g.strokeStyle=`rgba(255,255,255,${k})`; g.lineCap='round';   // 刃の一閃
+    g.lineWidth=2.5*k+0.5;
+    const ex=Math.cos(f.ax)*R0*1.3, ey=Math.sin(f.ax)*R0*1.3;
+    g.beginPath(); g.moveTo(f.x-ex,f.y-ey); g.lineTo(f.x+ex,f.y+ey); g.stroke();
+    g.restore();
+  }
+  for(const r of rings){
+    g.strokeStyle=`hsla(42 80% 62% / ${r.life*0.5})`; g.lineWidth=2;
+    g.beginPath(); g.arc(r.x,r.y,r.r,0,6.2832); g.stroke();
+  }
+  // タップの波紋（押した場所に広がる薄い輪＝当たっても外しても手応え）
+  for(const tp of taps){
+    const k=tp.life, R=TAP_R*(1.1-k*0.7);
+    g.strokeStyle=`rgba(120,100,70,${k*0.45})`; g.lineWidth=2*k+0.5;
+    g.beginPath(); g.arc(tp.x,tp.y,R,0,6.2832); g.stroke();
+  }
+  // 指のあと
+  if(trail.length>1){
+    g.save(); g.lineCap='round'; g.lineJoin='round';
+    const spent=ONE_STROKE&&strokeCuts>0;   // 使い切ったストローク＝指を上げる合図
+    for(let i=1;i<trail.length;i++){
+      const a=trail[i-1], b=trail[i];
+      g.strokeStyle=spent?`rgba(190,175,150,${b.life*0.22})`
+                         :`rgba(255,255,255,${b.life*0.55})`;
+      g.lineWidth=(spent?3:6)*b.life+1;
+      g.beginPath(); g.moveTo(a.x,a.y); g.lineTo(b.x,b.y); g.stroke();
+    }
+    g.restore();
+  }
+  g.restore();   // 画面揺れ
+  // 時間切れ：盤面を落ち着かせる（そうしないと結果の文字が酵母に埋もれて読めない）
+  if(finished){ g.fillStyle='rgba(239,231,217,.74)'; g.fillRect(0,0,W,H); }
+}
+
+function loop(now){
+  const t=now/1000;
+  let dt=last?Math.min(0.05,t-last)*SLOWMO:0; last=t;   // SLOWMO＝検証用のスロー再生（通常1）
+  if(started && !finished){ runT+=dt; if(runT>=TIME) finish(false); }
+  if(shkT>0){ shkT-=dt; if(shkT<=0) shkA=0; }
+  if(finished){
+    const was=resT; resT+=dt;
+    // 受け付け可能になった時に初めて「タップで もう一度」を出す＝押せる合図になる
+    if(was<RESULT_WAIT && resT>=RESULT_WAIT) elRes.querySelector('.a').style.opacity='1';
+  }
+  step(finished?0:dt); draw(t);   // 時間切れ＝そのまま静止して結果を見せる
+  // アルコール度数バーの更新。危険域(0.6超)は寒色テーマのまま点滅（明滅）で注意を促す
+  //   ※色相を赤へ振ると途中で緑を通り「安全」に見えるので不可。青のまま明滅＝満タンほど速く明るく。
+  elAlcFill.style.width=(alc*100).toFixed(1)+'%';
+  elAlcDeg.textContent=(alc*DEG_MAX).toFixed(1);
+  if(alc>0.6){ const kk=(alc-0.6)/0.4, pl=0.5+0.5*Math.sin(t*(6+kk*12));
+    elAlcFill.style.filter=`brightness(${1+0.7*pl})`; }
+  else elAlcFill.style.filter='none';
+  requestAnimationFrame(loop);
+}
+resize(); reset(); requestAnimationFrame(loop);
+
+// デバッグ用（無害・常設）
+window.__dbg={
+  probeOn(){ probe={}; }, probe:()=>probe, gran:()=>cells[0].gran, dbg:()=>dbg, bits:()=>bits.length,
+  sweatN:()=>sweat.length,
+  ripeN:()=>cells.filter(c=>c.bud>=CUT_MIN).length, gas:()=>gas.length,
+  time:()=>({runT,started,finished,gameover,alc,living:livingCount(),dead:cells.length-livingCount(),
+    left:started?Math.max(0,1-runT/TIME):1}),
+  setDiff(lo,hi,win){ WIN_LO=WIN_HI=win; }, newGame(){ restart(); },   // 後方互換：3つ目 win で猶予を平坦に（テストの9999で死凍結）
+  // 的の数・熟す速さ・猶予を個別に（difficulty.html 用）。blo/bhi/bcv/bsp＝的、wlo/whi/wcv＝猶予（混雑で伸びる）
+  setTune(o){ if(o.blo!==undefined)BUD_LO=o.blo; if(o.bhi!==undefined)BUD_HI=o.bhi; if(o.bcv!==undefined)BUD_CURVE=o.bcv; if(o.bsp!==undefined)BUD_SPEED=o.bsp;
+    if(o.wlo!==undefined)WIN_LO=o.wlo; if(o.whi!==undefined)WIN_HI=o.whi; if(o.wcv!==undefined)WIN_CURVE=o.wcv; },
+  // 検証用：全 ripe 細胞の warn を w に固定（死なないよう窓を大きくして over を w*窓 に）
+  setWarn(w){ WIN_LO=WIN_HI=20; for(const c of cells) if(!c.dead){ c.bud=1; c.over=w*20; } },
+  killN(k){ for(const c of cells){ if(k<=0) break; if(!c.dead){ c.dead=true; c.deadT=0; c.stick=null;
+    alc=Math.min(1,alc+ALC_PER_DEATH); k--; } } elCnt.textContent=livingCount(); },
+  setAlc(v){ alc=Math.max(0,Math.min(1,v)); },   // 検証用：アルコール量を直接セット
+  setAlcRate(v){ ALC_RATE=v; },                   // 検証用：ジタバタ中のアルコール上昇率
+  setAlcWarn0(v){ ALC_WARN0=v; },                 // 検証用：アルコールを出し始める warn
+  target(){ let bst=null; for(const c of cells){ if(c.dead||c.bud<CUT_MIN) continue;
+    if(!bst||c.over>bst.over) bst=c; } if(!bst) return null;
+    const a=budAng(bst), nd=neckD(bst); return {x:bst.x+Math.cos(a)*nd+bst.jx, y:bst.y+Math.sin(a)*nd+bst.jy, a}; },
+  setTime(v){ started=true; runT=v; },
+  best:()=>best,
+  faces:()=>{const m={};for(const c of cells){const w=Math.min(1,c.over/winNow());const f=faceOf(c,w);m[f]=(m[f]|0)+1;}return m;},
+  gasArea:()=>gas.reduce((s,b)=>s+Math.PI*b.r*b.r,0)/(Math.PI*VR*VR),
+  gasRMax:()=>gas.reduce((s,b)=>Math.max(s,b.r),0),
+  pos:()=>cells.map(c=>({x:c.x,y:c.y})),
+  stuck:()=>cells.filter(c=>c.stick).length,
+  raw:()=>cells.map(c=>({y:c.y,stick:!!c.stick})),
+  outside:()=>cells.filter(c=>Math.hypot(c.x-cx,c.y-cy)>VR-semiA(c)*0.5).length,
+  // 縁からのはみ出し量（px）。母体だけでなく芽の先端も測る（芽は当たり判定に入っていなかった）
+  rim(){ let mb=0,mu=0,nb=0,nu=0;
+    for(const c of cells){
+      const ob=Math.hypot(c.x-cx,c.y-cy)+semiA(c)-VR;
+      if(ob>0.5){ nb++; mb=Math.max(mb,ob); }
+      if(c.bud>0.02){ const a=budAng(c), d=budD(c);
+        const ou=Math.hypot(c.x+Math.cos(a)*d-cx, c.y+Math.sin(a)*d-cy)+budA(c)-VR;
+        if(ou>0.5){ nu++; mu=Math.max(mu,ou); } }
+    }
+    return {bodyN:nb,bodyMax:+mb.toFixed(1),budN:nu,budMax:+mu.toFixed(1),VR:+VR.toFixed(1),n:cells.length};
+  },
+  vmax:()=>cells.reduce((s,c)=>Math.max(s,Math.hypot(c.vx,c.vy)),0),
+  slow(k){ SLOWMO=k; },
+  // 高音側だけのRMS＝一極ハイパス(約400Hz)後の実効値＝小型スピーカー/耳が実際に出す音量に近い
+  _rmsHi(d){ const A=0.946; let yp=0,xp=0,sq=0; for(let i=0;i<d.length;i++){ const y=A*(yp+d[i]-xp); sq+=y*y; yp=y; xp=d[i]; } return Math.sqrt(sq/d.length); },
+  // 音を耳で確かめられないので、同じ合成を OfflineAudioContext で描画して波形を測る
+  async render(P,n){
+    const sr=44100, oc=new OfflineAudioContext(1,sr*0.6,sr);
+    cutSound(oc,0,n===undefined?40:n,P||SND);
+    const b=await oc.startRendering(), d=b.getChannelData(0);
+    let peak=0,pi=0;
+    for(let i=0;i<d.length;i++){ const v=Math.abs(d[i]); if(v>peak){peak=v;pi=i;} }
+    // 立ち上がり＝ピークの10%を超えてからピークまで
+    let a0=0; for(let i=0;i<pi;i++){ if(Math.abs(d[i])>peak*0.1){ a0=i; break; } }
+    // 長さ＝ピークから -40dB まで
+    let end=d.length-1; for(let i=pi;i<d.length;i++){ let m=0; for(let j=i;j<Math.min(d.length,i+220);j++) m=Math.max(m,Math.abs(d[j])); if(m<peak*0.01){ end=i; break; } }
+    // 明るさ＝ゼロ交差率（高いほど高域が濃い＝鋭い）
+    let zc=0; const w=Math.min(d.length,Math.floor(sr*0.03));
+    for(let i=1;i<w;i++) if((d[i-1]<0)!==(d[i]<0)) zc++;
+    let sq=0; for(let i=0;i<d.length;i++) sq+=d[i]*d[i]; const rms=Math.sqrt(sq/d.length);
+    return {peak:+peak.toFixed(3), rms:+rms.toFixed(4), rmsHi:+this._rmsHi(d).toFixed(4), attackMs:+((pi-a0)/sr*1000).toFixed(2),
+            durMs:+((end-pi)/sr*1000).toFixed(0), zcr:Math.round(zc/(w/sr))};
+  },
+  setSnd(P){ Object.assign(SND,P); }, getSnd:()=>({...SND}),
+  playCut(n){ popSound(n===undefined?40:n); },
+
+  // ちぎり演出の強度（snapfx.html から振る）
+  setFx(o){ if(o.fly!==undefined)FLY=o.fly; if(o.st!==undefined)SNAP_ST=o.st;
+    if(o.dur!==undefined)SNAP_DUR=o.dur; if(o.thr!==undefined)THR_DUR=o.thr; },
+  getFx:()=>({fly:FLY,st:SNAP_ST,dur:SNAP_DUR,thr:THR_DUR}),
+  threads:()=>threads.length, snapN:()=>cells.filter(c=>c.snapT>0).length,
+  shake:()=>({t:shkT,a:shkA}),
+  center:()=>cells.length?(cells.reduce((s,c)=>s+(c.y-cy),0)/cells.length)/VR:0,
+  centerX:()=>cells.length?(cells.reduce((s,c)=>s+(c.x-cx),0)/cells.length)/VR:0,
+  loads:()=>gas.map(b=>cells.filter(c=>c.stick===b).length),
+  gasOff(){ gas.length=0; GASOFF=true; }, gasOn(){ GASOFF=false; },
+  setPush(v){ GAS_PUSH=v; }, popAt(r){ gasPopSound(r); },
+  setGasVol(v){ GASPOP_VOL=v; }, getGasVol:()=>GASPOP_VOL,
+  // 破裂音を OfflineAudioContext に描画して波形を測る（耳で聞けないので。r＝泡の半径）
+  async renderPop(r){
+    const sr=44100, oc=new OfflineAudioContext(1,sr*0.6,sr);
+    gasPopSound(r===undefined?150:r, oc, 0);
+    const b=await oc.startRendering(), d=b.getChannelData(0);
+    let peak=0,pi=0; for(let i=0;i<d.length;i++){ const v=Math.abs(d[i]); if(v>peak){peak=v;pi=i;} }
+    let end=d.length-1; for(let i=pi;i<d.length;i++){ let m=0; for(let j=i;j<Math.min(d.length,i+220);j++) m=Math.max(m,Math.abs(d[j])); if(m<peak*0.01){ end=i; break; } }
+    let zc=0; const w=Math.min(d.length,Math.floor(sr*0.03)); for(let i=1;i<w;i++) if((d[i-1]<0)!==(d[i]<0)) zc++;
+    let sq=0; for(let i=0;i<d.length;i++) sq+=d[i]*d[i]; const rms=Math.sqrt(sq/d.length);
+    return {peak:+peak.toFixed(3), rms:+rms.toFixed(4), rmsHi:+this._rmsHi(d).toFixed(4), durMs:+((end-pi)/sr*1000).toFixed(0), zcr:Math.round(zc/(w/sr))};
+  },
+  gasRpops:()=>gas.map(b=>+(b.rpop||GAS_RPOP).toFixed(0)),
+  setGas(per,feed,rpop){ GAS_PER=per; GAS_FEED=feed; GAS_RPOP=rpop; gas.length=0; for(const c of cells) c.stick=null; },
+  cells:()=>cells.length,
+  fill(n){ for(let i=0;i<n && cells.length<CAP;i++){
+    const a=rnd(0,6.28), d=rnd(0,VR*0.8);
+    const k=mkCell(cx+Math.cos(a)*d,cy+Math.sin(a)*d,R0); k.r=R0; k.bud=Math.random(); cells.push(k);
+  } elCnt.textContent=cells.length; },
+  ripe(){ for(const c of cells) c.bud=1; },
+  reset
+};
+})();
+</script>
+</body>
+</html>

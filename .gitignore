@@ -1,0 +1,7 @@
+# 公開するのは index.html のみ。開発用ツール(compare/cut/difficulty/snapfx/sound*/faces).html、
+# 版スナップショット(versions/)、設計ログ(HANDOFF.md)は非公開。
+# ホワイトリスト方式＝まず全部無視し、公開する3ファイルだけ許可する（取りこぼし事故を防ぐ）。
+/*
+!/index.html
+!/README.md
+!/.gitignore
