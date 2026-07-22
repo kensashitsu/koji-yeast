@@ -129,7 +129,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v94';   // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v95';   // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -160,6 +160,8 @@ const DIE_BLO   = 2.5;   // 点滅の速さ（Hz）warn=0 のとき
 const DIE_BHI   = 15;    // 点滅の速さ（Hz）warn=1（死ぬ寸前）＝カラータイマーが速く明滅
 const DIE_RED   = 0.62;  // 赤点滅の最大濃さ
 const DIE_ON    = 0.06;  // これ未満の warn では演出しない（熟した直後にいきなり暴れないように）
+const DEATH_FADE   = 0.85;  // ★死んでから色と顔が「ジワーッ」と抜けきるまでの秒数（0で即灰色）
+const GAMEOVER_HOLD= 1.2;   // ★アルコール満タンで全酵母が一斉に死ぬ→結果を出すまでの間（フェードを見せる秒数）
 // ★糖とアルコール（ユーザー案・シムで確認済み）。糖＝時計、アルコール＝失敗の蓄積。
 //   酵母が死ぬ→死体はそのまま残って場所を塞ぐ＋泡が出てアルコールが上がる→死体で首が探しにくく
 //   なりさらに死ぬ（負けの連鎖）。アルコール満タン＝ゲームオーバー／糖が尽きる＝時間切れ＝生存数がスコア。
@@ -277,6 +279,7 @@ const NUC_R     = 0.24;   // 中心の核が占める領域（粒はここへ入
 
 let runT=0, started=false, finished=false, resT=0;   // 制限時間の状態
 let alc=0, gameover=false;                            // アルコール量(0..1)／アルコール満タンで敗北
+let dyingOut=0;                                       // >0＝アルコール満タンで全酵母が一斉に死んでいく最中（フェード後に結果へ）
 let probe=null;   // 見た目検証用（通常は null ＝何もしない）
 const dbg={spd:0,rej:""};   // ちぎり判定の内訳（検証用・無害）
 const cv=document.getElementById('c'), g=cv.getContext('2d');
@@ -390,7 +393,7 @@ function bevOf(deg){
   return {name:'日本酒の原酒',deg:20};   // 20度＝発酵で到達する上限（蒸留の焼酎でなく原酒が筋。酵母が生きられない限界）
 }
 function finish(lost){
-  finished=true; gameover=!!lost;
+  finished=true; gameover=!!lost; dyingOut=0;
   const n=livingCount();                          // 生きている酵母の数
   // ★スコア＝生存数 × (1−アルコール)。死ぬと生存数もアルコールも悪化する二重減点＝きれいな執行を報う。
   //   表示は知育的に「アルコール度数」で（純度%より発酵が実感できる）。度数=アルコール×20度（20度=全滅）。
@@ -426,7 +429,7 @@ function finish(lost){
 }
 function restart(){
   reset(); gas.length=0; deaths.length=0; bits.length=0; rings.length=0; trail.length=0; cutflash.length=0; taps.length=0; threads.length=0;
-  runT=0; started=false; finished=false; cut=0; gasAcc=0; alc=0; gameover=false;
+  runT=0; started=false; finished=false; cut=0; gasAcc=0; alc=0; gameover=false; dyingOut=0;
   elRes.querySelector('.u').textContent='点';
   elRes.querySelector('.btns').classList.remove('on');   // ★透明な結果ボタンがプレイ中にタップを奪わないよう解除
   elRes.style.opacity='0'; elHint.style.opacity='1'; elCnt.textContent='1';
@@ -877,6 +880,13 @@ function die(c,i){
   elCnt.textContent=livingCount();
 }
 function livingCount(){ let n=0; for(const c of cells) if(!c.dead) n++; return n; }
+// ★アルコール満タン（20度）＝全酵母が一斉に死ぬ。die()を個別に呼ぶと死音が80回鳴るので、まとめて dead 化し
+//   フェード(deadT)だけ始動＝全員が同時にジワーッと色が抜ける。結果は GAMEOVER_HOLD 後に loop() から出す。
+function startGameover(){
+  dyingOut=0.0001;
+  for(const c of cells){ if(!c.dead){ c.dead=true; c.deadT=0; c.stick=null; c.bud=0; c.over=0; c.vx=0; c.vy=0; } }
+  elCnt.textContent=0; dieSound();   // 全滅の一撃（1回だけ）
+}
 // ★汗＝弱った酵母がアルコールを出しているときに散らす代謝物のしずく。危険域の間だけ飛び散る。
 const sweat=[];
 function spawnSweat(x,y){
@@ -995,11 +1005,11 @@ function step(dt){
   }
   // アルコール満タン＝ゲームオーバー（時間切れとは別の敗北）
   if(tutMode && alc>0.55) alc=0.55;   // ★チュートリアルはアルコールを抑えて全滅させない（上がるのは見せる）
-  if(alc>=1 && started && !finished && !tutMode) finish(true);
+  if(alc>=1 && started && !finished && !tutMode && !dyingOut) startGameover();   // 満タン＝全酵母が一斉に死ぬ演出へ
   stepGas(dt,living); gasStick(dt);
   // 生きた酵母が全滅＝出芽する個体がいない。1匹から出直し（死体は残る）。
   // ★started条件を外す：開始前(最初のちぎり前)に初期酵母が死ぬと復activできず出芽ゼロ・タイマー停止で詰むため。
-  if(!finished && livingCount()===0){ const c=mkCell(cx,cy,R0); c.r=R0; cells.push(c); }
+  if(!finished && !dyingOut && livingCount()===0){ const c=mkCell(cx,cy,R0); c.r=R0; cells.push(c); }   // 全滅演出中は復活させない
   for(let i=deaths.length-1;i>=0;i--){
     const d=deaths[i]; d.life-=dt*1.7; if(d.life<=0) deaths.splice(i,1);
   }
@@ -1081,16 +1091,19 @@ function step(dt){
 
 // ---- 描画 ----
 // warn(0..1)＝死が近いほど色が抜けて青ざめる
-function body(x,y,a,b,rot,sq,shade,hue,warn){
-  warn=warn||0;
-  const s=1-warn*0.72, l=warn*8;
+// dfade＝死のフェード(0=生きた色／1=灰色の死体)。死ぬと彩度が抜け、明度が死体の灰色へジワーッと寄る。
+function body(x,y,a,b,rot,sq,shade,hue,warn,dfade){
+  warn=warn||0; dfade=dfade||0;
+  const s=(1-warn*0.72)*(1-dfade), l=warn*8;      // dfade→彩度0（無彩色の灰へ）
   g.save(); g.translate(x,y); g.rotate(rot); g.scale(1+sq,1-sq*0.9);
   const r=(a+b)/2;
   const gr=g.createRadialGradient(-a*0.26,-b*0.34,r*0.1,0,0,r*1.15);
-  gr.addColorStop(0,`hsl(${44+hue} ${72*s}% ${93-shade*8-l}%)`);
-  gr.addColorStop(1,`hsl(${38+hue} ${54*s}% ${76-shade*14-l}%)`);
+  const li0=(93-shade*8-l)*(1-dfade)+(68-shade*8)*dfade;   // 明度：生きた値→死体の灰色値へ補間
+  const li1=(76-shade*14-l)*(1-dfade)+(56-shade*12)*dfade;
+  gr.addColorStop(0,`hsl(${44+hue} ${72*s}% ${li0}%)`);
+  gr.addColorStop(1,`hsl(${38+hue} ${54*s}% ${li1}%)`);
   g.fillStyle=gr; g.beginPath(); g.ellipse(0,0,a,b,0,0,6.2832); g.fill();
-  g.strokeStyle=`hsla(${30+hue} ${40*s}% 52% / .38)`; g.lineWidth=Math.max(1,r*0.075); g.stroke();
+  g.strokeStyle=`hsla(${30+hue} ${40*s}% ${52-dfade*8}% / ${0.38-dfade*0.10})`; g.lineWidth=Math.max(1,r*0.075); g.stroke();
   g.restore();
 }
 // 細胞の中身＝顆粒と液胞。体に固定した座標なので体と一緒に回る
@@ -1145,10 +1158,11 @@ function mWave(r,y){ g.strokeStyle=INKS; g.lineWidth=Math.max(1,r*0.07); g.lineC
 function cheek(r,ex,y){ g.fillStyle='rgba(232,150,150,.34)';
   g.beginPath(); g.arc(-ex,y,r*0.13,0,6.2832); g.fill();
   g.beginPath(); g.arc( ex,y,r*0.13,0,6.2832); g.fill(); }
-function face(x,y,r,rot,sq,id){
+function face(x,y,r,rot,sq,id,alpha){
   if(r<R0*0.44) return;
   const E=r*0.30, EY=-r*0.06;
   g.save(); g.translate(x,y); g.rotate(rot); g.scale(1+sq,1-sq*0.9);
+  if(alpha!==undefined) g.globalAlpha*=alpha;   // 死のフェード等で顔を薄くする
   switch(id){
     case 'A1': eBig(r,-E,EY); eBig(r,E,EY); mSmile(r,r*0.14); cheek(r,E*1.6,r*0.22); break;
     case 'A2': eArc(r,-E,EY); eArc(r,E,EY); mSmile(r,r*0.14); cheek(r,E*1.5,r*0.20); break;
@@ -1254,19 +1268,19 @@ function draw(t){
   }
 
   for(const c of cells){
-    if(c.dead){   // 死体＝灰色でそのまま残る。★顔は無い（＝死んでいるのが一目で分かる）
+    if(c.dead){   // ★死＝一気に灰色にせず、色と顔が「ジワーッ」と抜けていく（deadTで進行）。k=1で完全な灰色の死体。
+      const k=Math.min(1, c.deadT/DEATH_FADE);
       const shade=(c.y-cy)/VR*-0.5+0.5;
-      g.save(); g.translate(c.x,c.y); g.rotate(c.rot);
-      const gr=g.createRadialGradient(-semiA(c)*0.26,-semiB(c)*0.34,c.r*0.1,0,0,c.r*1.15);
-      gr.addColorStop(0,`hsl(40 8% ${70-shade*8}%)`);
-      gr.addColorStop(1,`hsl(38 6% ${58-shade*12}%)`);
-      g.fillStyle=gr; g.beginPath(); g.ellipse(0,0,semiA(c),semiB(c),0,0,6.2832); g.fill();
-      g.strokeStyle='rgba(90,84,74,.28)'; g.lineWidth=Math.max(1,c.r*0.07); g.stroke();
-      // 中身の粒だけ薄く残す（顔は描かない）
-      g.beginPath(); g.ellipse(0,0,semiA(c)*0.93,semiB(c)*0.93,0,0,6.2832); g.clip();
-      for(const q of c.gran){ g.fillStyle=`rgba(90,84,74,${q.v?0.10:0.16})`;
-        g.beginPath(); g.arc(q.x*semiA(c),q.y*semiB(c),q.r*c.r,0,6.2832); g.fill(); }
-      g.restore();
+      body(c.x,c.y,semiA(c),semiB(c),c.rot,0,shade,c.hue,0,k);        // 本体：生きた色→灰色へ補間
+      grains(c.x,c.y,semiA(c),semiB(c),c.rot,0,c.gran,c.hue,1-k);     // 色つき顆粒はフェードアウト
+      if(k>0.02){                                                     // 灰色の顆粒（死体のテクスチャ）をフェードイン
+        g.save(); g.translate(c.x,c.y); g.rotate(c.rot);
+        g.beginPath(); g.ellipse(0,0,semiA(c)*0.93,semiB(c)*0.93,0,0,6.2832); g.clip();
+        for(const q of c.gran){ g.fillStyle=`rgba(90,84,74,${(q.v?0.10:0.16)*k})`;
+          g.beginPath(); g.arc(q.x*semiA(c),q.y*semiB(c),q.r*c.r,0,6.2832); g.fill(); }
+        g.restore();
+      }
+      if(k<1) face(c.x,c.y,c.r,0,0,'B3',1-k);   // 顔（ぐったり）もジワーッと薄れて消える
       continue;
     }
     const sq=Math.sin(c.wobP)*c.wob*0.16;
@@ -1468,7 +1482,8 @@ function draw(t){
 function loop(now){
   const t=now/1000;
   let dt=last?Math.min(0.05,t-last)*SLOWMO:0; last=t;   // SLOWMO＝検証用のスロー再生（通常1）
-  if(started && !finished && !tutMode){ runT+=dt; if(runT>=TIME) finish(false); }   // ★チュートリアル中は時間を進めない（安全に練習）
+  if(started && !finished && !tutMode && !dyingOut){ runT+=dt; if(runT>=TIME) finish(false); }   // ★チュートリアル中/全滅演出中は時間を進めない
+  if(dyingOut>0 && !finished){ dyingOut+=dt; if(dyingOut>=GAMEOVER_HOLD) finish(true); }          // 全酵母のフェードを見せてから結果へ
   if(tutMode){
     // ★紹介ステップ(0)：グルコースが「減っていく」様子を実演（1→0でループ）＝時間の概念を視覚化。本番の時間は動かさない。
     if(tutStep===0){ tutGluDemo-=dt/5; if(tutGluDemo<=0.04) tutGluDemo=1; }
