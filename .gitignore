@@ -5,3 +5,7 @@
 !/index.html
 !/README.md
 !/.gitignore
+!/manifest.json
+!/icon-512.png
+!/icon-192.png
+!/apple-touch-icon.png
