@@ -146,7 +146,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v108';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v109';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -542,34 +542,38 @@ let ac=null;
 //   actx() はタッチ/クリック（onDown）の中で呼ばれるので、ここで resume すれば確実に音が鳴る。
 function actx(){ if(!ac) ac=new (window.AudioContext||window.webkitAudioContext)();
   if(ac.state==='suspended') ac.resume(); return ac; }
-// ★アルコール上昇中の音＝低く柔らかい「ふつふつ」ドローン（発酵の泡だち）。うるさくないよう常時ではなく
-//   上昇中だけスッと現れ/消える。アルコールが高いほど少しだけ明るく・大きく（でも控えめ）。
-//   持続音は1本のオシレータを鳴らしっぱなしにして音量(gain)だけ滑らかに上下＝クリック無し・iOSでも安定。
-const ferm={osc:null,gain:null,filt:null,lfoG:null};
-function fermInit(){
-  if(ferm.osc || !ac) return;
-  try{
-    const a=ac;
-    const o=a.createOscillator(); o.type='sawtooth'; o.frequency.value=82;          // 低い土台
-    const filt=a.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value=320; filt.Q.value=7; // こもった柔らかさ
-    const g=a.createGain(); g.gain.value=0;                                          // 既定は無音
-    const lfo=a.createOscillator(); lfo.type='sine'; lfo.frequency.value=6.5;        // ふつふつの揺れ
-    const lfoG=a.createGain(); lfoG.gain.value=0;
-    o.connect(filt).connect(g).connect(a.destination);
-    lfo.connect(lfoG).connect(g.gain);                                               // 音量を軽く揺らす＝泡だち感
-    o.start(); lfo.start();
-    ferm.osc=o; ferm.gain=g; ferm.filt=filt; ferm.lfoG=lfoG;
-  }catch(e){}
+// ★アルコール上昇中の音＝「トゥクトゥク」＝コップに水を注ぐ丸い粒（ユーザー選択・候補②）。
+//   アルコール量(ゲージ)に音程を連動＝水位が上がるほど1粒ずつ音程が上がる。満ちるほど間隔が詰まる。
+//   1粒＝頭の当たり(短ノイズ)＋丸い共鳴(サインが少し落ちる)。スマホでも最初から聞こえる音量に。
+function tukGrain(a,t,freq,vol){
+  // 「t」の当たり
+  const len=Math.floor(a.sampleRate*0.007), nb=a.createBuffer(1,len,a.sampleRate), d=nb.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*(1-i/len);
+  const ns=a.createBufferSource(); ns.buffer=nb;
+  const bp=a.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=freq*2.4; bp.Q.value=1.2;
+  const ng=a.createGain(); ng.gain.value=vol*0.35;
+  ns.connect(bp).connect(ng).connect(a.destination); ns.start(t);
+  // 「ウ」の丸い共鳴
+  const o=a.createOscillator(); o.type='sine';
+  o.frequency.setValueAtTime(freq*1.5,t); o.frequency.exponentialRampToValueAtTime(freq,t+0.035);
+  const g=a.createGain(); g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(vol,t+0.006); g.gain.exponentialRampToValueAtTime(0.0001,t+0.09);
+  const lp=a.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=freq*4; lp.Q.value=1.5;
+  o.connect(lp).connect(g).connect(a.destination); o.start(t); o.stop(t+0.12);
 }
-function fermSound(active,al){
-  if(!ac) return;
-  if(active) fermInit();
-  if(!ferm.gain) return;
-  const t=ac.currentTime;
-  const vol = active ? (0.035 + 0.05*Math.min(1,al/0.5)) : 0;   // 控えめ。アルコール高いほど少しだけ大きく
-  ferm.gain.gain.setTargetAtTime(vol, t, 0.12);                 // スッとフェード（クリック無し）
-  ferm.filt.frequency.setTargetAtTime(300+al*700, t, 0.2);      // 高いほど少し明るく
-  ferm.lfoG.gain.setTargetAtTime(active?0.02:0, t, 0.12);       // ふつふつの揺れ幅
+let tukAcc=0;   // トゥクの発音タイマー
+const TUK_VOL=0.34;                 // ★音量（スマホでもしっかり聞こえるよう大きめ）
+const TUK_F0=340, TUK_F1=860;       // 音程の下限→上限（下限を上げてスマホの弱いスピーカーでも最初から聞こえる）
+const TUK_GAP0=0.24, TUK_GAP1=0.10; // 空(=ゆっくり)→満(=速い)の間隔
+function tukSound(dt,active,al){
+  if(!ac || !active){ tukAcc=0; return; }         // 発酵していない時は鳴らさない＆タイマーリセット
+  const u=Math.min(1, al/0.75);                    // 満ち度合い（0.75で満杯相当）
+  const gap=TUK_GAP0+(TUK_GAP1-TUK_GAP0)*u;        // 満ちるほど詰まる
+  tukAcc+=dt;
+  if(tukAcc>=gap){ tukAcc=0;
+    const f=TUK_F0*Math.pow(TUK_F1/TUK_F0,u)*(0.98+Math.random()*0.04);   // 音程が上がる
+    try{ tukGrain(ac, ac.currentTime+0.005, f, TUK_VOL); }catch(e){}
+  }
 }
 // ★ちぎる音＝「ポコッ」（丸い泡）。ユーザーが sound-gallery.html の9候補から6番を選び、
 //   sound6.html で7つのつまみを触って値を確定（base400/sweep4/rise0.08/decay0.16/click0.3/vol1.5/jit3.5）。
@@ -1596,7 +1600,7 @@ function loop(now){
   // ★発酵中！＝アルコールが上昇している間だけ点滅表示（プレイ中のみ）＋同じ間だけ「ふつふつ」音
   const fermActive = fermentT>0 && started && !finished;
   elFerment.classList.toggle('on', fermActive);
-  fermSound(fermActive, alc);
+  tukSound(dt, fermActive, alc);   // ★アルコール上昇中は「トゥクトゥク」（ゲージ連動で音程UP）
   requestAnimationFrame(loop);
 }
 resize(); reset(); requestAnimationFrame(loop);
@@ -1699,7 +1703,7 @@ window.__dbg={
   } elCnt.textContent=cells.length; },
   ripe(){ for(const c of cells) c.bud=1; },
   tut:()=>({mode:tutMode,step:tutStep,cuts:tutCuts,deaths:tutDeaths,met:tutGoalMet,glu:+tutGluDemo.toFixed(2),stuck:cells.filter(c=>c.stick).length}),
-  fermDbg:()=>({g:ferm.gain?+ferm.gain.gain.value.toFixed(4):null, fermentT:+fermentT.toFixed(2), acState:ac?ac.state:'none'}),
+  fermDbg:()=>({fermentT:+fermentT.toFixed(2), tukAcc:+tukAcc.toFixed(3), acState:ac?ac.state:'none'}),
   reset
 };
 })();
