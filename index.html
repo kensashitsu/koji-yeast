@@ -129,7 +129,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v92';   // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v93';   // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -287,8 +287,9 @@ const elAlc=document.getElementById('alc');
 const elOv=document.getElementById('ov'), elCoach=document.getElementById('coach'),
       elCoachTxt=document.getElementById('coachtxt'), elCoachNext=document.getElementById('coachnext');
 let tutMode=false, tutStep=0, tutGoalMet=false, tutCuts=0, tutDeaths=0;   // すべて tutMode ガード＝本番に影響しない
+let tutGluDemo=1;         // 紹介ステップ(0)でグルコースが減る様子を見せるデモ用の残量(1→0でループ)
 const TUT_STRESS_STEP=3;  // このステップ(=ストレス/アルコール発酵の説明)から危険域(アルコール・炭酸ガス)を見せる。それより前は静かに待たせる
-const TUT_DEATH_STEP=4;   // このステップ(=放置で死ぬ説明)から死を解禁。発酵ステップの間はストレスは出すが死なせない
+const TUT_DEATH_STEP=5;   // このステップ(=放置で死ぬ説明)から死を解禁。発酵〜泡ステップの間はストレスは出すが死なせない
 let W=0,H=0,DPR=1,cx=0,cy=0,VR=0,R0=0;
 function resize(){
   DPR=Math.min(2,window.devicePixelRatio||1);
@@ -435,12 +436,13 @@ function restart(){
 // 段階式：各ステップは「文章html」と「達成条件goal」を持つ。goalを満たすと『次へ』が解禁＝順番に体験。
 //   すべて tutMode ガードなので本番ロジック（タイマー・全滅・スコア）には一切影響しない。
 const TUT=[
-  { html:"👀 これが<b>酵母</b>。まわりの<b>ピンクの粒（グルコース君）</b>は酵母の<b>エサ（グルコース）</b>で、これが<b>残り時間</b>にもなっているよ。まずは読んでね。", goal:null },
+  { html:"👀 これが<b>酵母</b>。まわりの<b>ピンクの粒（グルコース君）</b>は酵母の<b>エサ（グルコース）</b>だよ。見ていると<b>少しずつ減っていく</b>でしょ？ これが<b>残り時間</b>にもなっているんだ。", goal:null },
   { html:"酵母は<b>体から芽をふくらませて</b>増えるよ（＝<b>出芽</b>）。芽の根元にできる<b>金色の首（くびれ）</b>を、ゆびで<b>さっとなぞって</b>ちぎってみよう！", goal:()=>tutCuts>=1 },
   { html:"ちぎるたびに<b>酵母が増える</b>！ どんどん首をなぞって<b>増やそう</b>（あと数回）。", goal:()=>tutCuts>=4 },
-  { html:"首を<b>放っておく</b>と、酵母は<b>ストレス</b>で弱り、<b>アルコール発酵</b>を始めるよ🍶 <b>アルコール</b>（上のバー）と<b>炭酸ガスの泡</b>を出すんだ（泡は<b>ふくらんで邪魔</b>になる）。しばらく<b>放置</b>して見てみよう。", goal:()=>alc>=0.08 },
-  { html:"それでも放っておくと、酵母は<b>死んで灰色</b>に…（その場に残って<b>場所もふさぐ</b>）。1匹<b>死ぬ</b>のを見てみよう。", goal:()=>tutDeaths>=1 },
-  { html:"終わり方は2つ。<b>アルコール20度で全滅</b>／エサの<b>グルコース（時間）を使い切って終了</b>（＝エネルギー切れで活動できない）。使い切った時に<b>生きている数が多く・アルコールが低い</b>ほど高得点！", goal:null },
+  { html:"首を<b>放っておく</b>と、酵母は<b>ストレス</b>で弱り、<b>アルコール発酵</b>を始めるよ🍶 <b>アルコール</b>（上のバー）と<b>炭酸ガスの泡</b>を出すんだ。しばらく<b>放置</b>して見てみよう。", goal:()=>alc>=0.08 },
+  { html:"酵母は<b>炭酸ガスの泡にくっつく</b>性質があるよ（表面が水をはじくから）。泡が<b>破裂</b>すると、酵母は<b>吹き飛ばされて</b>バラバラに！ 泡に乗った酵母を見てみよう。", goal:()=>cells.some(c=>c.stick) },
+  { html:"さらに放っておくと、酵母は<b>死んで灰色</b>に…（その場に残って<b>場所もふさぐ</b>）。1匹<b>死ぬ</b>のを見てみよう。", goal:()=>tutDeaths>=1 },
+  { html:"アルコールが<b>たまりすぎる</b>と、酵母は<b>自分が出したアルコールで死んでしまう</b>＝<b>20度で全滅</b>！ もう一つの終わりは、エサの<b>グルコース（時間）を使い切って終了</b>。使い切った時に<b>生きている数が多く・アルコールが低い</b>ほど高得点だよ。", goal:null },
   { html:"これでバッチリ！🎉 本番は<b>30秒</b>の勝負。首は<b>早めに</b>ちぎって、自己ベストを目指そう！", goal:null },
 ];
 function showCoach(){
@@ -466,7 +468,7 @@ function coachNext(){
 }
 function startGame(){ try{actx();}catch(e){} tutMode=false; elCoach.hidden=true; elOv.hidden=true; restart(); }
 function startTutorial(){ try{actx();}catch(e){} elOv.hidden=true; restart();
-  tutMode=true; tutStep=0; tutGoalMet=false; tutCuts=0; tutDeaths=0;
+  tutMode=true; tutStep=0; tutGoalMet=false; tutCuts=0; tutDeaths=0; tutGluDemo=1;
   if(cells[0]){ cells[0].bud=0.62; }   // すぐに金の首が見えるように芽を進めておく
   showCoach();
 }
@@ -1212,7 +1214,8 @@ function draw(t){
   //   v39：密度2倍（N60＝60秒で1個/秒）。★いきなり消えるのをやめ、いま食われている1個だけを
   //   点滅＋だんだん縮んで薄くする＝その分子が消えていく途中が見える＝残り時間が連続的に分かる。
   {
-    const N=34, left=started?Math.max(0,1-runT/TIME):1, urg=left<0.18;   // ★v90：スマホで小さく分かりづらい→数を減らし(60→34)1個を大きく認識しやすく（密度より視認性）
+    const demoGlu = tutMode && tutStep===0;   // ★紹介ステップ：デモの残量で分子が減る様子を見せる
+    const N=34, left=demoGlu?tutGluDemo:(started?Math.max(0,1-runT/TIME):1), urg=left<0.18;   // ★v90：スマホで小さく分かりづらい→数を減らし(60→34)1個を大きく認識しやすく（密度より視認性）
     const leftN=left*N;                        // 残っている分子数（連続値）
     const eating=Math.ceil(leftN)-1;           // いま食われている分子＝最後に残る1個のindex
     const prog=leftN-eating;                   // その分子の残り 1(丸ごと)→0(消える寸前)
@@ -1222,7 +1225,7 @@ function draw(t){
       const a=-Math.PI/2 + frac*6.2832;
       const gx=cx+Math.cos(a)*VR, gy=cy+Math.sin(a)*VR;
       let gr=R0*0.55, alpha=1;   // ★v90：R0*0.30→0.55＝スマホでもグルコース君と分かる大きさに（数を34に減らして混み合いは回避）
-      const eatingThis = started && left<1 && i===eating;
+      const eatingThis = (started||demoGlu) && left<1 && i===eating;
       if(eatingThis){                                          // ★食われ中の1個＝点滅しながら縮んで薄く
         const blink=0.55+0.45*Math.sin(t*9);                  // ちかちか（注意を引く）
         gr*=0.5+0.5*prog;                                     // 残りぶんだけ小さくなる＝連続的な目盛り
@@ -1465,7 +1468,11 @@ function loop(now){
   const t=now/1000;
   let dt=last?Math.min(0.05,t-last)*SLOWMO:0; last=t;   // SLOWMO＝検証用のスロー再生（通常1）
   if(started && !finished && !tutMode){ runT+=dt; if(runT>=TIME) finish(false); }   // ★チュートリアル中は時間を進めない（安全に練習）
-  if(tutMode) tutCheck();                                                             // ★達成判定→『次へ』解禁
+  if(tutMode){
+    // ★紹介ステップ(0)：グルコースが「減っていく」様子を実演（1→0でループ）＝時間の概念を視覚化。本番の時間は動かさない。
+    if(tutStep===0){ tutGluDemo-=dt/5; if(tutGluDemo<=0.04) tutGluDemo=1; }
+    tutCheck();                                                                      // ★達成判定→『次へ』解禁
+  }
   if(shkT>0){ shkT-=dt; if(shkT<=0) shkA=0; }
   if(finished){
     const was=resT; resT+=dt;
@@ -1581,7 +1588,7 @@ window.__dbg={
     const k=mkCell(cx+Math.cos(a)*d,cy+Math.sin(a)*d,R0); k.r=R0; k.bud=Math.random(); cells.push(k);
   } elCnt.textContent=cells.length; },
   ripe(){ for(const c of cells) c.bud=1; },
-  tut:()=>({mode:tutMode,step:tutStep,cuts:tutCuts,deaths:tutDeaths,met:tutGoalMet}),
+  tut:()=>({mode:tutMode,step:tutStep,cuts:tutCuts,deaths:tutDeaths,met:tutGoalMet,glu:+tutGluDemo.toFixed(2),stuck:cells.filter(c=>c.stick).length}),
   reset
 };
 })();
