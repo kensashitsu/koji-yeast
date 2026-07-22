@@ -50,18 +50,21 @@
   #res{position:fixed;left:0;right:0;top:50%;transform:translateY(-50%);
     text-align:center;color:#5c5344;pointer-events:none;opacity:0;transition:opacity .5s}
   #res .n{font-size:66px;font-weight:700;letter-spacing:-.01em;line-height:1.05;font-variant-numeric:tabular-nums}
+  #res .n .max{font-size:24px;font-weight:600;color:#b3a790;letter-spacing:0}   /* 満点100の「/100」を小さく添える */
   #res .u{font-size:15px;font-weight:500;letter-spacing:.06em;color:#8a7f6d}
   #res .t{font-size:13px;font-weight:500;letter-spacing:.03em;color:#8a7f6d;margin-top:18px;min-height:1.2em}
   #res .b{font-size:12px;letter-spacing:.03em;color:#c58a2e;font-weight:700;margin-top:5px;min-height:0;font-variant-numeric:tabular-nums}
-  /* 自己ベスト5ランキング */
-  #res .rank{margin:12px auto 0;display:inline-block;min-width:120px;text-align:left}
+  /* 自己ベスト5ランキング（点数＋酵母数＋アルコール度数を併記） */
+  #res .rank{margin:12px auto 0;display:inline-block;text-align:left}
   #res .rank .rt{font-size:11px;font-weight:700;letter-spacing:.1em;color:#a89c88;text-align:center;margin-bottom:5px}
-  #res .rank .row{display:flex;justify-content:space-between;align-items:baseline;gap:20px;
-    font-size:13.5px;line-height:1.7;color:#8a7f6d;font-variant-numeric:tabular-nums}
-  #res .rank .row .rk{color:#bdb19a;font-weight:700;font-size:11.5px}
-  #res .rank .row .pu{font-size:10.5px;color:#a89c88;margin-left:1px}
-  #res .rank .row.me{color:#c58a2e;font-weight:800}
-  #res .rank .row.me .rk,#res .rank .row.me .pu{color:#d69a34}
+  #res .rank .row{display:flex;align-items:baseline;gap:10px;line-height:1.75;color:#8a7f6d;font-variant-numeric:tabular-nums}
+  #res .rank .row .rk{width:2.3em;color:#bdb19a;font-weight:700;font-size:11.5px}
+  #res .rank .row .sc{width:3.1em;text-align:right;font-size:14px;font-weight:700}
+  #res .rank .row .sc .pu{font-size:10px;color:#a89c88;font-weight:500;margin-left:1px}
+  #res .rank .row .dt{font-size:11px;color:#a89c88}
+  #res .rank .row.me{color:#c58a2e}
+  #res .rank .row.me .sc{color:#c58a2e;font-weight:800}
+  #res .rank .row.me .rk,#res .rank .row.me .sc .pu,#res .rank .row.me .dt{color:#d69a34}
   #res .k{font-size:12.5px;letter-spacing:.02em;color:#5f7fa4;margin:12px auto 0;max-width:17em;
     background:rgba(120,150,190,.12);border-radius:11px;padding:9px 13px;line-height:1.6}
   #res .btns{margin-top:24px;display:flex;gap:12px;justify-content:center;opacity:0;pointer-events:none;transition:opacity .45s}
@@ -143,7 +146,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v103';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v104';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -182,10 +185,10 @@ const GAMEOVER_HOLD= 1.2;   // ★アルコール満タンで全酵母が一斉�
 //   ※生きた酵母もアルコールを出す版はナイフの刃（増やすほど負ける）でシム却下。死からのみにする。
 const DEG_MAX       = 20;    // アルコール度数の上限（満タン＝20度＝酵母が生きられない限界。知育的表示）
 const ALC_SCORE_W   = 0.5;   // ★スコアへのアルコール減点の重み。
-                             //   score=生存数×SCORE_MULT×(1−ALC_SCORE_W×alc²)。★v87：alc→alc²の二乗に（低アルコールはほぼ減点なし＝
+                             //   score=SCORE_MAX×(生存数/CAP)×(1−ALC_SCORE_W×alc²)。★v87：alc→alc²の二乗に（低アルコールはほぼ減点なし＝
                              //   丁寧に低く抑えたプレイが報われる／高アルコールほど強く効く）。0で減点なし・満タンで最大 W ぶん減点。
-const SCORE_MULT    = 10;    // ★スコアの倍率（v103：生存数そのままだと最大80点で物足りない→×10で達成感のある数字に。
-                             //   生存50匹・6度で約477点／満タン近くまで詰めて低アルコールなら最大800点。生存数の約10倍＝直感的。）
+const SCORE_MAX     = 100;   // ★100点満点（v104・ユーザー要望）。お椀いっぱい(生存数=CAP)＋アルコール0で満点100。
+                             //   例：生存50匹/80・6度で約60点／70匹・低アルコールで約87点／満点はほぼ完璧なプレイ。
 // ★v55：ジタバタ中(危険域)の酵母も、死ぬ前からアルコールとCO2を少し出す（ユーザー案・発酵ストレス＝より現実的）。
 //   ただし主源は従来どおり「死」（自動プレイヤーは常に危険域で切る＝トリクルを強くすると上手でも理不尽に負ける）。
 //   出すのは危険域(warn>ALC_WARN0)だけ＝きちんと早めに切れば0（v29の"生きた酵母も出す＝増やすほど負ける"罠は不踏）。
@@ -401,11 +404,12 @@ function reset(){ cells=[mkCell(cx,cy,R0)]; cells[0].r=R0; }
 // ---- 制限時間 ----
 const elRes=document.getElementById('res');
 let best=+(localStorage.getItem('yeastBestScore')||0);   // ★スコア制に変更（旧yeastBestは匹数なので別キー）
-// ★自己ベスト5（localStorage 'yeastTop5v2' に降順で最大5件）。v103でスコアが×10になったのでキーを分け新スケールで新規開始
-//   （旧キーの小さいスコアと混在させない）。
+// ★自己ベスト5（localStorage 'yeastTop5v3' に最大5件）。各件は {s:点数, n:生存数, d:アルコール度数}。
+//   v104で100点満点にスケール変更＋点数以外(生存/度数)も併記するため、キーを分け新規開始。旧・数値のみの件も許容(normalize)。
 function loadTop5(){
-  try{ const a=JSON.parse(localStorage.getItem('yeastTop5v2'));
-    if(Array.isArray(a)) return a.filter(x=>Number.isFinite(x)).sort((p,q)=>q-p).slice(0,5); }catch(e){}
+  try{ const a=JSON.parse(localStorage.getItem('yeastTop5v3'));
+    if(Array.isArray(a)) return a.map(e=>typeof e==='number'?{s:e}:e)
+      .filter(e=>e&&Number.isFinite(e.s)).sort((p,q)=>q.s-p.s).slice(0,5); }catch(e){}
   return [];
 }
 // 度数を近い強さのお酒にたとえる（知育の豆知識）。実際の代表的な度数で。
@@ -431,22 +435,24 @@ function finish(lost){
   // ★スコア＝生存数 × (1−アルコール)。死ぬと生存数もアルコールも悪化する二重減点＝きれいな執行を報う。
   //   表示は知育的に「アルコール度数」で（純度%より発酵が実感できる）。度数=アルコール×20度（20度=全滅）。
   const deg=(alc*DEG_MAX).toFixed(1);             // アルコール度数（低いほど高得点）
-  const score=lost?0:Math.round(n*SCORE_MULT*(1-ALC_SCORE_W*alc*alc)); // ×SCORE_MULTで達成感のある数字に。減点は二乗＝低アルコールはほぼ無傷・生存数が主
-  // ★自己ベスト5に反映（クリア時のみ加える。全滅=0点はランキングに入れない）。rank＝今回の順位（1始まり・6位以下はランク外）。
+  const score=lost?0:Math.round(SCORE_MAX*Math.min(1,n/CAP)*(1-ALC_SCORE_W*alc*alc)); // 100点満点＝達成率(生存数/CAP)×アルコール係数。減点は二乗＝低アルコールはほぼ無傷
+  // ★自己ベスト5に反映（クリア時のみ加える。全滅=0点はランキングに入れない）。各件は{s:点数,n:生存数,d:度数}。rank＝今回の順位。
   let top5=loadTop5(), rank=0;
-  if(!lost){ rank=top5.filter(v=>v>score).length+1; top5=top5.concat(score).sort((a,b)=>b-a).slice(0,5);
-    localStorage.setItem('yeastTop5v2', JSON.stringify(top5)); }
-  best=top5.length?top5[0]:0; localStorage.setItem('yeastBestScore',best);   // 後方互換で単一bestも更新
-  elRes.querySelector('.n').textContent=lost?'☠':score;
+  if(!lost){ rank=top5.filter(e=>e.s>score).length+1;
+    top5=top5.concat({s:score,n:n,d:+deg}).sort((a,b)=>b.s-a.s).slice(0,5);
+    localStorage.setItem('yeastTop5v3', JSON.stringify(top5)); }
+  best=top5.length?top5[0].s:0; localStorage.setItem('yeastBestScore',best);   // 後方互換で単一bestも更新
+  elRes.querySelector('.n').innerHTML=lost?'☠':`${score}<span class="max">/100</span>`;   // 100点満点を明示
   elRes.querySelector('.u').textContent=lost?`アルコール${DEG_MAX}度で全滅`:'点';
   elRes.querySelector('.t').textContent=lost?'':`生存 ${n}匹　アルコール ${deg}度`;
   elRes.querySelector('.b').textContent=(!lost&&rank===1)?'🎉 さいこう記録！':'';
-  // ★ベスト5ランキング（今回の記録はハイライト）。数値は自前生成なので innerHTML でよい。
+  // ★ベスト5ランキング（点数・生存数・度数を併記／今回の記録はハイライト）。数値は自前生成なので innerHTML でよい。
   const rk=elRes.querySelector('.rank');
   if(top5.length){
     let h='<div class="rt">🏆 ベスト5</div>';
-    top5.forEach((v,i)=>{ const me=!lost && rank<=5 && i===rank-1;
-      h+=`<div class="row${me?' me':''}"><span class="rk">${i+1}位</span><span><span class="pt">${v}</span><span class="pu">点</span></span></div>`; });
+    top5.forEach((e,i)=>{ const me=!lost && rank<=5 && i===rank-1;
+      const dt=(e.n!=null&&e.d!=null)?`${e.n}匹・${e.d}度`:'';
+      h+=`<div class="row${me?' me':''}"><span class="rk">${i+1}位</span><span class="sc">${e.s}<span class="pu">点</span></span><span class="dt">${dt}</span></div>`; });
     rk.innerHTML=h;
   } else rk.innerHTML='';
   // ★豆知識：最終アルコール度数を、近い強さのお酒にたとえて知育に（ユーザー案）
