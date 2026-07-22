@@ -52,9 +52,18 @@
   #res .n{font-size:66px;font-weight:700;letter-spacing:-.01em;line-height:1.05;font-variant-numeric:tabular-nums}
   #res .u{font-size:15px;font-weight:500;letter-spacing:.06em;color:#8a7f6d}
   #res .t{font-size:13px;font-weight:500;letter-spacing:.03em;color:#8a7f6d;margin-top:18px;min-height:1.2em}
-  #res .b{font-size:12px;letter-spacing:.03em;color:#a89c88;margin-top:5px;font-variant-numeric:tabular-nums}
-  #res .k{font-size:12.5px;letter-spacing:.02em;color:#5f7fa4;margin:14px auto 0;max-width:17em;
-    background:rgba(120,150,190,.12);border-radius:11px;padding:9px 13px;line-height:1.65}
+  #res .b{font-size:12px;letter-spacing:.03em;color:#c58a2e;font-weight:700;margin-top:5px;min-height:0;font-variant-numeric:tabular-nums}
+  /* 自己ベスト5ランキング */
+  #res .rank{margin:12px auto 0;display:inline-block;min-width:120px;text-align:left}
+  #res .rank .rt{font-size:11px;font-weight:700;letter-spacing:.1em;color:#a89c88;text-align:center;margin-bottom:5px}
+  #res .rank .row{display:flex;justify-content:space-between;align-items:baseline;gap:20px;
+    font-size:13.5px;line-height:1.7;color:#8a7f6d;font-variant-numeric:tabular-nums}
+  #res .rank .row .rk{color:#bdb19a;font-weight:700;font-size:11.5px}
+  #res .rank .row .pu{font-size:10.5px;color:#a89c88;margin-left:1px}
+  #res .rank .row.me{color:#c58a2e;font-weight:800}
+  #res .rank .row.me .rk,#res .rank .row.me .pu{color:#d69a34}
+  #res .k{font-size:12.5px;letter-spacing:.02em;color:#5f7fa4;margin:12px auto 0;max-width:17em;
+    background:rgba(120,150,190,.12);border-radius:11px;padding:9px 13px;line-height:1.6}
   #res .btns{margin-top:24px;display:flex;gap:12px;justify-content:center;opacity:0;pointer-events:none;transition:opacity .45s}
   #res .btns.on{opacity:1;pointer-events:auto}   /* 結果が出そろってから（RESULT_WAIT後）押せる＝振り終わりの指で誤爆しない */
   #res button{font-family:inherit;font-weight:700;font-size:15px;letter-spacing:.02em;border:none;cursor:pointer;
@@ -104,7 +113,7 @@
 <div id="cnt">1</div>
 <div id="ferment">🫧 発酵中！</div>
 <div id="res"><div class="n">0</div><div class="u">匹</div>
-  <div class="t"></div><div class="b"></div><div class="k"></div>
+  <div class="t"></div><div class="b"></div><div class="rank" id="resrank"></div><div class="k"></div>
   <div class="btns" id="resbtns"><button class="again" id="resagain">もう一度</button><button class="quit" id="resquit">やめる</button></div></div>
 <!-- ★タイトル画面（お椀の上に重なる。はじめる／あそびかた） -->
 <div id="ov">
@@ -134,7 +143,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v100';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v101';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -390,6 +399,12 @@ function reset(){ cells=[mkCell(cx,cy,R0)]; cells[0].r=R0; }
 // ---- 制限時間 ----
 const elRes=document.getElementById('res');
 let best=+(localStorage.getItem('yeastBestScore')||0);   // ★スコア制に変更（旧yeastBestは匹数なので別キー）
+// ★自己ベスト5（localStorage 'yeastTop5' に降順で最大5件）。無ければ旧・単一best から移行。
+function loadTop5(){
+  try{ const a=JSON.parse(localStorage.getItem('yeastTop5'));
+    if(Array.isArray(a)) return a.filter(x=>Number.isFinite(x)).sort((p,q)=>q-p).slice(0,5); }catch(e){}
+  return best>0?[best]:[];
+}
 // 度数を近い強さのお酒にたとえる（知育の豆知識）。実際の代表的な度数で。
 //   ※20度は満タン＝ゲームオーバー時のみ（生存クリアで20度にはならない）。
 function bevOf(deg){
@@ -414,16 +429,27 @@ function finish(lost){
   //   表示は知育的に「アルコール度数」で（純度%より発酵が実感できる）。度数=アルコール×20度（20度=全滅）。
   const deg=(alc*DEG_MAX).toFixed(1);             // アルコール度数（低いほど高得点）
   const score=lost?0:Math.round(n*(1-ALC_SCORE_W*alc*alc)); // 減点は二乗＝低アルコールはほぼ無傷・生存数が主
-  const isBest=score>best;
-  if(isBest){ best=score; localStorage.setItem('yeastBestScore',best); }
+  // ★自己ベスト5に反映（クリア時のみ加える。全滅=0点はランキングに入れない）。rank＝今回の順位（1始まり・6位以下はランク外）。
+  let top5=loadTop5(), rank=0;
+  if(!lost){ rank=top5.filter(v=>v>score).length+1; top5=top5.concat(score).sort((a,b)=>b-a).slice(0,5);
+    localStorage.setItem('yeastTop5', JSON.stringify(top5)); }
+  best=top5.length?top5[0]:0; localStorage.setItem('yeastBestScore',best);   // 後方互換で単一bestも更新
   elRes.querySelector('.n').textContent=lost?'☠':score;
   elRes.querySelector('.u').textContent=lost?`アルコール${DEG_MAX}度で全滅`:'点';
   elRes.querySelector('.t').textContent=lost?'':`生存 ${n}匹　アルコール ${deg}度`;
-  elRes.querySelector('.b').textContent=(isBest&&!lost?'さいこう記録！　':'')+`これまでの最高 ${best}点`;
+  elRes.querySelector('.b').textContent=(!lost&&rank===1)?'🎉 さいこう記録！':'';
+  // ★ベスト5ランキング（今回の記録はハイライト）。数値は自前生成なので innerHTML でよい。
+  const rk=elRes.querySelector('.rank');
+  if(top5.length){
+    let h='<div class="rt">🏆 ベスト5</div>';
+    top5.forEach((v,i)=>{ const me=!lost && rank<=5 && i===rank-1;
+      h+=`<div class="row${me?' me':''}"><span class="rk">${i+1}位</span><span><span class="pt">${v}</span><span class="pu">点</span></span></div>`; });
+    rk.innerHTML=h;
+  } else rk.innerHTML='';
   // ★豆知識：最終アルコール度数を、近い強さのお酒にたとえて知育に（ユーザー案）
   const bev=bevOf(alc*DEG_MAX);
   elRes.querySelector('.k').textContent=bev.msg||`💡 ${deg}度は「${bev.name}」（約${bev.deg}度）くらい。${bev.desc}`;
-  elRes.style.opacity='1'; elHint.style.opacity='0';
+  elRes.style.opacity='1'; elHint.style.opacity='0'; elAlc.style.opacity='0';   // 結果中はアルコールバーを隠す（度数は結果に出る＋大きなスコアと重なるため）
   elRes.querySelector('.btns').classList.remove('on'); resT=0;
   try{ const a=actx(), t=a.currentTime;
     if(lost){                                     // 敗北＝下がる音
@@ -448,7 +474,7 @@ function restart(){
   elFerment.classList.remove('on');
   elRes.querySelector('.u').textContent='点';
   elRes.querySelector('.btns').classList.remove('on');   // ★透明な結果ボタンがプレイ中にタップを奪わないよう解除
-  elRes.style.opacity='0'; elHint.style.opacity='1'; elCnt.textContent='1';
+  elRes.style.opacity='0'; elHint.style.opacity='1'; elCnt.textContent='1'; elAlc.style.opacity='1';
 }
 
 // ---- タイトル画面／あそびかたチュートリアル ----
