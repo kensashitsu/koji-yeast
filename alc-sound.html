@@ -51,53 +51,46 @@ function envGain(a,t0,peak){ // フェードイン→保持→フェードアウ
 function noiseBuf(a,sec){ const n=Math.floor(a.sampleRate*sec),b=a.createBuffer(1,n,a.sampleRate),d=b.getChannelData(0);
   for(let i=0;i<n;i++) d[i]=Math.random()*2-1; return b; }
 
-// グラスに水を注ぐ音＝「せせらぎ(ノイズ)」＋「グラスの共鳴(高Qバンドパス)」。水位が上がると共鳴音程が上がる。
-function pourResonance(a,t0,out,f0,f1,q,gain,curveEnd){
-  const src=a.createBufferSource(); src.buffer=noiseBuf(a,DUR+0.3); src.loop=true;
-  const bp=a.createBiquadFilter(); bp.type='bandpass'; bp.Q.value=q;
-  if(curveEnd){ // 終盤で一気に上がるカーブ（満ちる直前）
-    const N=64, arr=new Float32Array(N);
-    for(let i=0;i<N;i++){ const u=i/(N-1); arr[i]=f0*Math.pow(f1/f0, Math.pow(u,2.2)); }
-    bp.frequency.setValueCurveAtTime(arr,t0,DUR);
-  }else{ bp.frequency.setValueAtTime(f0,t0); bp.frequency.exponentialRampToValueAtTime(f1,t0+DUR); }
-  const g=a.createGain(); g.gain.value=gain;
-  src.connect(bp).connect(g).connect(out); src.start(t0); src.stop(t0+DUR); return src;
+// 「トゥク」1粒＝丸い水の粒の音。頭に「t」の当たり(短ノイズ)＋「ウ」の丸い共鳴(サインが少し落ちる)。round=丸さ。
+function tuk(a,t,out,freq,vol,round){
+  round=round||1;
+  // 「t」の当たり（ごく短いノイズ）
+  const len=Math.floor(a.sampleRate*0.007), nb=a.createBuffer(1,len,a.sampleRate), d=nb.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*(1-i/len);
+  const ns=a.createBufferSource(); ns.buffer=nb;
+  const bp=a.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=freq*2.4; bp.Q.value=1.2;
+  const ng=a.createGain(); ng.gain.value=vol*0.35/round;   // 丸いほど当たりは控えめ
+  ns.connect(bp).connect(ng).connect(out); ns.start(t);
+  // 「ウ」の丸い共鳴（ピッチが立ち上がりから少し落ちる＝トゥクの丸み）
+  const o=a.createOscillator(); o.type='sine';
+  o.frequency.setValueAtTime(freq*1.5,t); o.frequency.exponentialRampToValueAtTime(freq,t+0.035*round);
+  const g=a.createGain(); g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(vol,t+0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.09*round);
+  const lp=a.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=freq*4; lp.Q.value=1.5;
+  o.connect(lp).connect(g).connect(out); o.start(t); o.stop(t+0.12*round);
 }
-function waterStream(a,t0,out,gain){ // さらさら流れる水
-  const src=a.createBufferSource(); src.buffer=noiseBuf(a,DUR+0.3); src.loop=true;
-  const bp=a.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=2600; bp.Q.value=0.7;
-  const g=a.createGain(); g.gain.value=gain;
-  src.connect(bp).connect(g).connect(out); src.start(t0); src.stop(t0+DUR);
+// t0..t0+DUR に「トゥク」を並べる。base 音程が f0→f1 に上昇。gap0→gap1 で間隔変化（満ちるほど詰めたい時）。
+function tukSeq(a,t0,out,f0,f1,gap0,gap1,vol,round){
+  let t=t0+0.04;
+  while(t<t0+DUR-0.02){ const u=(t-t0)/DUR;
+    const f=f0*Math.pow(f1/f0,u)*(0.98+Math.random()*0.04);   // わずかにゆらぐ
+    tuk(a,t,out,f,vol,round);
+    t += gap0+(gap1-gap0)*u;
+  }
 }
 const CANDS=[
- { name:'① コップに水を注ぐ（澄んだ）', desc:'水を注ぎながら、水位が上がるにつれ音程がだんだん高くなる。満ちるほど高く。',
-   play(a,t0){ const out=envGain(a,t0,1); out.connect(a.destination);
-     waterStream(a,t0,out,0.05);
-     pourResonance(a,t0,out,360,1500,20,0.55);        // 主共鳴（上がる）
-     pourResonance(a,t0,out,720,2900,16,0.28);        // 倍音でキラッと
-   } },
+ { name:'① トゥクトゥク（基本）', desc:'水を注ぐたび「トゥク…トゥク」と丸い粒。注ぐほど1粒ずつ音程が上がる。',
+   play(a,t0){ const out=a.createGain(); out.gain.value=0.9; out.connect(a.destination);
+     tukSeq(a,t0,out, 280,760, 0.19,0.19, 0.16, 1); } },
 
- { name:'② コップに水を注ぐ（泡・トロトロ）', desc:'①より丸くて泡っぽい。とろとろ注ぐ感じ＋音程上昇。',
-   play(a,t0){ const out=envGain(a,t0,1); out.connect(a.destination);
-     waterStream(a,t0,out,0.04);
-     pourResonance(a,t0,out,300,1150,16,0.5);
-     // ぽこぽこ泡（間隔がだんだん詰まる＝満ちてくる）
-     let t=t0+0.15;
-     while(t<t0+DUR-0.1){ const prog=(t-t0)/DUR;
-       const o=a.createOscillator(), g=a.createGain(); o.type='sine';
-       const bf=(220+prog*500)*(0.9+Math.random()*0.2);
-       o.frequency.setValueAtTime(bf*1.7,t); o.frequency.exponentialRampToValueAtTime(bf,t+0.05);
-       g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.09,t+0.008); g.gain.exponentialRampToValueAtTime(0.0001,t+0.11);
-       o.connect(g).connect(out); o.start(t); o.stop(t+0.13);
-       t += 0.2 - prog*0.12 + Math.random()*0.06;
-     } } },
+ { name:'② トゥクトゥク（満ちるほど速く）', desc:'満ちてくるほど「トゥクトゥクッ」と間隔が詰まって音程も上がる。満杯感が出る。',
+   play(a,t0){ const out=a.createGain(); out.gain.value=0.9; out.connect(a.destination);
+     tukSeq(a,t0,out, 260,820, 0.24,0.10, 0.16, 1); } },
 
- { name:'③ コップに水を注ぐ（最後にキュッ）', desc:'ゆっくり上がって、満ちる直前に音程がキュッと一気に上がる（もう満杯！の感じ）。',
-   play(a,t0){ const out=envGain(a,t0,1); out.connect(a.destination);
-     waterStream(a,t0,out,0.05);
-     pourResonance(a,t0,out,340,1900,20,0.55,true);   // 終盤で一気に上がるカーブ
-     pourResonance(a,t0,out,680,3400,16,0.26,true);
-   } },
+ { name:'③ トゥクトゥク（低め・丸い）', desc:'①より低くてこもった、丸い「トゥク」。落ち着いた水音。',
+   play(a,t0){ const out=a.createGain(); out.gain.value=0.9; out.connect(a.destination);
+     tukSeq(a,t0,out, 190,520, 0.21,0.21, 0.17, 1.5); } },
 ];
 
 const list=document.getElementById('list');
