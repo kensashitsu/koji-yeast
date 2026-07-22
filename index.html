@@ -32,9 +32,13 @@
   #hint{position:fixed;left:0;right:0;top:env(safe-area-inset-top,0);
     text-align:center;font-size:13.5px;font-weight:500;letter-spacing:.04em;color:#867a66;pointer-events:none;
     transition:opacity .6s}
-  #cnt{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0) + 12px);transition:transform .09s;
-    text-align:center;font-size:14px;font-weight:500;letter-spacing:.02em;color:#a1937c;pointer-events:none;
-    font-variant-numeric:tabular-nums}
+  /* ★匹数はプレイ中に見る余裕がないので非表示（結果画面には「生存◯匹」で出る）。要素は残す＝内部の更新/切った手応えのコードは無害に動く */
+  #cnt{display:none}
+  /* ★アルコール上昇中（＝弱った酵母が発酵している間）だけ出る警告テキスト */
+  #ferment{position:fixed;left:0;right:0;text-align:center;pointer-events:none;z-index:8;
+    font-size:14.5px;font-weight:800;letter-spacing:.08em;color:#e0762e;opacity:0;transition:opacity .18s}
+  #ferment.on{opacity:1;animation:fermentpulse .75s ease-in-out infinite}
+  @keyframes fermentpulse{0%,100%{transform:scale(1);opacity:.72}50%{transform:scale(1.09);opacity:1}}
   /* アルコール度数バー（プレイ中・お椀の上の空きに常設） */
   #alc{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0) + 42px);
     width:58%;max-width:280px;pointer-events:none;text-align:center}
@@ -98,6 +102,7 @@
 <div id="alc"><div class="lab">アルコール <span id="alcdeg">0.0</span>度</div>
   <div class="track"><div class="fill" id="alcfill"></div></div></div>
 <div id="cnt">1</div>
+<div id="ferment">🫧 発酵中！</div>
 <div id="res"><div class="n">0</div><div class="u">匹</div>
   <div class="t"></div><div class="b"></div><div class="k"></div>
   <div class="btns" id="resbtns"><button class="again" id="resagain">もう一度</button><button class="quit" id="resquit">やめる</button></div></div>
@@ -129,7 +134,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v96';   // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v97';   // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -286,6 +291,8 @@ const cv=document.getElementById('c'), g=cv.getContext('2d');
 const elHint=document.getElementById('hint'), elCnt=document.getElementById('cnt');
 const elAlcFill=document.getElementById('alcfill'), elAlcDeg=document.getElementById('alcdeg');
 const elAlc=document.getElementById('alc');
+const elFerment=document.getElementById('ferment');
+let fermentT=0;   // >0＝いまアルコールが上昇中（発酵中！表示のための余韻タイマー）
 // ★タイトル画面／あそびかたチュートリアル
 const elOv=document.getElementById('ov'), elCoach=document.getElementById('coach'),
       elCoachTxt=document.getElementById('coachtxt'), elCoachNext=document.getElementById('coachnext');
@@ -312,6 +319,7 @@ function resize(){
   elHint.style.top=(top-78)+'px'; elHint.style.bottom='auto'; elHint.style.padding='0';
   elAlc.style.top =(top-46)+'px';
   elCnt.style.top =(bot+20)+'px'; elCnt.style.bottom='auto';
+  elFerment.style.top=(bot+18)+'px';   // 匹数を消して空いたお椀の真下＝発酵中！の点滅を置く
 }
 window.addEventListener('resize',resize);
 // ★iOS Safari：アドレスバーの出入りは window.resize を出さないことがあるが visualViewport.resize は出る＝盤面を追従させる。
@@ -429,7 +437,8 @@ function finish(lost){
 }
 function restart(){
   reset(); gas.length=0; deaths.length=0; bits.length=0; rings.length=0; trail.length=0; cutflash.length=0; taps.length=0; threads.length=0;
-  runT=0; started=false; finished=false; cut=0; gasAcc=0; alc=0; gameover=false; dyingOut=0;
+  runT=0; started=false; finished=false; cut=0; gasAcc=0; alc=0; gameover=false; dyingOut=0; fermentT=0;
+  elFerment.classList.remove('on');
   elRes.querySelector('.u').textContent='点';
   elRes.querySelector('.btns').classList.remove('on');   // ★透明な結果ボタンがプレイ中にタップを奪わないよう解除
   elRes.style.opacity='0'; elHint.style.opacity='1'; elCnt.textContent='1';
@@ -954,6 +963,7 @@ function step(dt){
   let active=0; for(const c of cells) if(!c.dead && c.bud>0.001) active++;
   // ★序盤ブースト：生きた個体が EARLY_N 未満のとき熟す速さを上げる（1匹で最大→EARLY_N匹で1倍）。テンポ改善。
   const budBoost=1+EARLY_BOOST*Math.max(0,1-(living-1)/(EARLY_N-1));
+  if(fermentT>0) fermentT=Math.max(0,fermentT-dt);   // ★発酵中の余韻を減衰（下のループでアルコール上昇があれば0.35に再セット）
   for(let i=cells.length-1;i>=0;i--){
     const c=cells[i];
     c.flash=Math.max(0,c.flash-dt/0.22);           // 切られた光の減衰
@@ -985,6 +995,7 @@ function step(dt){
     if(warn>ALC_WARN0){
       const s=(warn-ALC_WARN0)/(1-ALC_WARN0);
       alc=Math.min(1, alc+ALC_RATE*s*dt);
+      fermentT=0.35;                                             // ★アルコール上昇中＝「発酵中！」を出す（少し余韻を持たせて点滅を安定）
       if(Math.random() < s*GAS_DANGER*dt) spawnGasAt(c.x,c.y);   // 泡もこの時に出る
     }
     // ★汗（代謝物）は「弱り始め(warn>SWEAT_WARN0)」から散らす＝アルコール域より早く・多くの酵母から見える。
@@ -1505,6 +1516,8 @@ function loop(now){
   if(alc>0.6){ const kk=(alc-0.6)/0.4, pl=0.5+0.5*Math.sin(t*(6+kk*12));
     elAlcFill.style.filter=`brightness(${1+0.7*pl})`; }
   else elAlcFill.style.filter='none';
+  // ★発酵中！＝アルコールが上昇している間だけ点滅表示（プレイ中のみ）
+  elFerment.classList.toggle('on', fermentT>0 && started && !finished);
   requestAnimationFrame(loop);
 }
 resize(); reset(); requestAnimationFrame(loop);
