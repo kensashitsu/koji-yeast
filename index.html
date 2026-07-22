@@ -143,7 +143,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v102';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v103';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -182,8 +182,10 @@ const GAMEOVER_HOLD= 1.2;   // ★アルコール満タンで全酵母が一斉�
 //   ※生きた酵母もアルコールを出す版はナイフの刃（増やすほど負ける）でシム却下。死からのみにする。
 const DEG_MAX       = 20;    // アルコール度数の上限（満タン＝20度＝酵母が生きられない限界。知育的表示）
 const ALC_SCORE_W   = 0.5;   // ★スコアへのアルコール減点の重み。
-                             //   score=生存数×(1−ALC_SCORE_W×alc²)。★v87：alc→alc²の二乗に（低アルコールはほぼ減点なし＝
+                             //   score=生存数×SCORE_MULT×(1−ALC_SCORE_W×alc²)。★v87：alc→alc²の二乗に（低アルコールはほぼ減点なし＝
                              //   丁寧に低く抑えたプレイが報われる／高アルコールほど強く効く）。0で減点なし・満タンで最大 W ぶん減点。
+const SCORE_MULT    = 10;    // ★スコアの倍率（v103：生存数そのままだと最大80点で物足りない→×10で達成感のある数字に。
+                             //   生存50匹・6度で約477点／満タン近くまで詰めて低アルコールなら最大800点。生存数の約10倍＝直感的。）
 // ★v55：ジタバタ中(危険域)の酵母も、死ぬ前からアルコールとCO2を少し出す（ユーザー案・発酵ストレス＝より現実的）。
 //   ただし主源は従来どおり「死」（自動プレイヤーは常に危険域で切る＝トリクルを強くすると上手でも理不尽に負ける）。
 //   出すのは危険域(warn>ALC_WARN0)だけ＝きちんと早めに切れば0（v29の"生きた酵母も出す＝増やすほど負ける"罠は不踏）。
@@ -399,11 +401,12 @@ function reset(){ cells=[mkCell(cx,cy,R0)]; cells[0].r=R0; }
 // ---- 制限時間 ----
 const elRes=document.getElementById('res');
 let best=+(localStorage.getItem('yeastBestScore')||0);   // ★スコア制に変更（旧yeastBestは匹数なので別キー）
-// ★自己ベスト5（localStorage 'yeastTop5' に降順で最大5件）。無ければ旧・単一best から移行。
+// ★自己ベスト5（localStorage 'yeastTop5v2' に降順で最大5件）。v103でスコアが×10になったのでキーを分け新スケールで新規開始
+//   （旧キーの小さいスコアと混在させない）。
 function loadTop5(){
-  try{ const a=JSON.parse(localStorage.getItem('yeastTop5'));
+  try{ const a=JSON.parse(localStorage.getItem('yeastTop5v2'));
     if(Array.isArray(a)) return a.filter(x=>Number.isFinite(x)).sort((p,q)=>q-p).slice(0,5); }catch(e){}
-  return best>0?[best]:[];
+  return [];
 }
 // 度数を近い強さのお酒にたとえる（知育の豆知識）。実際の代表的な度数で。
 //   ※20度は満タン＝ゲームオーバー時のみ（生存クリアで20度にはならない）。
@@ -428,11 +431,11 @@ function finish(lost){
   // ★スコア＝生存数 × (1−アルコール)。死ぬと生存数もアルコールも悪化する二重減点＝きれいな執行を報う。
   //   表示は知育的に「アルコール度数」で（純度%より発酵が実感できる）。度数=アルコール×20度（20度=全滅）。
   const deg=(alc*DEG_MAX).toFixed(1);             // アルコール度数（低いほど高得点）
-  const score=lost?0:Math.round(n*(1-ALC_SCORE_W*alc*alc)); // 減点は二乗＝低アルコールはほぼ無傷・生存数が主
+  const score=lost?0:Math.round(n*SCORE_MULT*(1-ALC_SCORE_W*alc*alc)); // ×SCORE_MULTで達成感のある数字に。減点は二乗＝低アルコールはほぼ無傷・生存数が主
   // ★自己ベスト5に反映（クリア時のみ加える。全滅=0点はランキングに入れない）。rank＝今回の順位（1始まり・6位以下はランク外）。
   let top5=loadTop5(), rank=0;
   if(!lost){ rank=top5.filter(v=>v>score).length+1; top5=top5.concat(score).sort((a,b)=>b-a).slice(0,5);
-    localStorage.setItem('yeastTop5', JSON.stringify(top5)); }
+    localStorage.setItem('yeastTop5v2', JSON.stringify(top5)); }
   best=top5.length?top5[0]:0; localStorage.setItem('yeastBestScore',best);   // 後方互換で単一bestも更新
   elRes.querySelector('.n').textContent=lost?'☠':score;
   elRes.querySelector('.u').textContent=lost?`アルコール${DEG_MAX}度で全滅`:'点';
