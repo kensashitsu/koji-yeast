@@ -146,7 +146,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v106';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v107';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）※v107＝v106のコンボ機能を撤回しv105へ戻した版
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -301,8 +301,6 @@ const NUC_R     = 0.24;   // 中心の核が占める領域（粒はここへ入
 let runT=0, started=false, finished=false, resT=0;   // 制限時間の状態
 let alc=0, gameover=false;                            // アルコール量(0..1)／アルコール満タンで敗北
 let dyingOut=0;                                       // >0＝アルコール満タンで全酵母が一斉に死んでいく最中（フェード後に結果へ）
-// ★コンボ：危険域(warn>COMBO_WARN＝発酵しかけ)の酵母を「救って」切ると連鎖。どれか死んだらリセット。演出＆最高コンボ記録用（スコアには影響しない）。
-let COMBO_WARN=0.6, combo=0, maxCombo=0; const combos=[];
 let probe=null;   // 見た目検証用（通常は null ＝何もしない）
 const dbg={spd:0,rej:""};   // ちぎり判定の内訳（検証用・無害）
 const cv=document.getElementById('c'), g=cv.getContext('2d');
@@ -448,8 +446,7 @@ function finish(lost){
   best=top5.length?top5[0].s:0; localStorage.setItem('yeastBestScore',best);   // 後方互換で単一bestも更新
   elRes.querySelector('.n').innerHTML=lost?'☠':`${score}<span class="max">/100</span>`;   // 100点満点を明示
   elRes.querySelector('.u').textContent=lost?`アルコール${DEG_MAX}度で全滅`:'点';
-  const comboTxt=maxCombo>=2?`🔥最高コンボ ×${maxCombo}`:'';
-  elRes.querySelector('.t').textContent=lost?comboTxt:(`生存 ${n}匹　アルコール ${deg}度`+(comboTxt?`　${comboTxt}`:''));
+  elRes.querySelector('.t').textContent=lost?'':`生存 ${n}匹　アルコール ${deg}度`;
   elRes.querySelector('.b').textContent=(!lost&&rank===1)?'🎉 さいこう記録！':'';
   // ★ベスト5ランキング（点数・生存数・度数を併記／今回の記録はハイライト）。数値は自前生成なので innerHTML でよい。
   const rk=elRes.querySelector('.rank');
@@ -485,7 +482,6 @@ function finish(lost){
 function restart(){
   reset(); gas.length=0; deaths.length=0; bits.length=0; rings.length=0; trail.length=0; cutflash.length=0; taps.length=0; threads.length=0;
   runT=0; started=false; finished=false; cut=0; gasAcc=0; alc=0; gameover=false; dyingOut=0; fermentT=0;
-  combo=0; maxCombo=0; combos.length=0;
   elFerment.classList.remove('on');
   elRes.querySelector('.u').textContent='点';
   elRes.querySelector('.btns').classList.remove('on');   // ★透明な結果ボタンがプレイ中にタップを奪わないよう解除
@@ -932,7 +928,6 @@ function gasStick(dt){
 const deaths=[];
 function die(c,i){
   if(tutMode) tutDeaths++;   // ★チュートリアル：死を体験した回数（放置→死ぬステップのgoal判定）
-  combo=0;                   // ★1匹でも死なせたらコンボ途切れ（救い続けた連鎖が切れる）
   // 死体は消さず「dead」にして残す＝場所を塞ぎ、CAPを圧迫し、首が探しにくくなる（負けの連鎖）
   c.dead=true; c.deadT=0; c.stick=null; c.bud=0; c.over=0; c.vx=0; c.vy=0;
   spawnGasAt(c.x,c.y);                 // 死体からもう一つ泡
@@ -973,31 +968,12 @@ function dieSound(){
     o.connect(g2).connect(a.destination); o.start(t); o.stop(t+0.42);
   }catch(e){}
 }
-// ★コンボ音：救うほど音が上がる短いブリップ（気持ちよさの主役）。コンボ数で音程を上げ、上限で頭打ち。
-function comboSound(n){
-  try{
-    const a=actx(), t=a.currentTime;
-    const f=Math.min(1400, 520+ (n-1)*70);       // コンボが伸びるほど高く（上限1400Hz）
-    const o=a.createOscillator(), g2=a.createGain(); o.type='triangle';
-    o.frequency.setValueAtTime(f,t); o.frequency.exponentialRampToValueAtTime(f*1.5,t+0.08);  // キュン↑
-    g2.gain.setValueAtTime(0.0001,t); g2.gain.exponentialRampToValueAtTime(0.14,t+0.015);
-    g2.gain.exponentialRampToValueAtTime(0.0001,t+0.22);
-    o.connect(g2).connect(a.destination); o.start(t); o.stop(t+0.24);
-  }catch(e){}
-}
 
 let cut=0;
 function split(c,nx,ny,cutAx){
   const a=budAng(c), br=budR(c);
   if(cutAx===undefined) cutAx=a+Math.PI/2;
   const dx=Math.cos(a), dy=Math.sin(a);
-  // ★コンボ：危険域(発酵しかけ)の酵母を切った＝「救った」＝連鎖+1。over をリセットする前に判定。
-  const warnCut=c.over/winNow();
-  if(warnCut>COMBO_WARN){
-    combo++; if(combo>maxCombo) maxCombo=combo;
-    combos.push({x:nx,y:ny,n:combo,life:1});   // 切った所に「×N」が弾けて浮かぶ
-    comboSound(combo);
-  }
   // 満杯なら増える先が無い＝子は生まれないが、母は救われる（＝満杯は「守る」状態）
   if(cells.length<CAP){
     const kid=mkCell(nx,ny,Math.max(br,R0*0.34),a); // 子は長軸を進行方向に向けて飛び出す
@@ -1110,8 +1086,6 @@ function step(dt){
   for(let i=taps.length-1;i>=0;i--){
     taps[i].life-=dt*4; if(taps[i].life<=0) taps.splice(i,1);
   }
-  // ★コンボの「×N」ポップ：ふわっと上に浮かんで薄れて消える
-  for(let i=combos.length-1;i>=0;i--){ const p=combos[i]; p.life-=dt/0.9; p.y-=dt*34; if(p.life<=0) combos.splice(i,1); }
   // 反発（グリッド／卵形は2円のカプセルで近似）
   const cell=R0*2.8, grid=new Map();
   const key=(i,j)=>i+','+j;
@@ -1561,22 +1535,6 @@ function draw(t){
     }
     g.restore();
   }
-  // ★コンボの「×N」ポップ（最前面）。コンボが伸びるほど大きく・熱い色に（金→橙→赤）。
-  for(const p of combos){
-    const k=Math.max(0,p.life), grow=Math.min(1,(1-k)/0.25);   // 出た直後にポンと拡大
-    const big=Math.min(1,(p.n-1)/12);                          // コンボ数で全体サイズUP
-    const sz=(R0*1.0)*(0.9+big*1.1)*(0.7+0.5*grow);
-    const hue=44-big*44;                                       // 44(金)→0(赤)
-    g.save(); g.globalAlpha=Math.min(1,k*1.6);
-    g.textAlign='center'; g.textBaseline='middle';
-    g.font=`800 ${sz.toFixed(1)}px system-ui,-apple-system,sans-serif`;
-    g.lineWidth=Math.max(2,sz*0.14); g.strokeStyle='rgba(255,255,255,.9)'; g.lineJoin='round';
-    g.strokeText('×'+p.n, p.x, p.y);
-    g.fillStyle=`hsl(${hue} 90% 55%)`; g.fillText('×'+p.n, p.x, p.y);
-    if(p.n>=5){ g.font=`800 ${(sz*0.42).toFixed(1)}px system-ui,sans-serif`;   // 5コンボ以上は「コンボ！」も添える
-      g.strokeText('コンボ！', p.x, p.y+sz*0.72); g.fillText('コンボ！', p.x, p.y+sz*0.72); }
-    g.restore();
-  }
   g.restore();   // 画面揺れ
   // 時間切れ：盤面を落ち着かせる（そうしないと結果の文字が酵母に埋もれて読めない）
   if(finished){ g.fillStyle='rgba(239,231,217,.74)'; g.fillRect(0,0,W,H); }
@@ -1710,7 +1668,6 @@ window.__dbg={
   } elCnt.textContent=cells.length; },
   ripe(){ for(const c of cells) c.bud=1; },
   tut:()=>({mode:tutMode,step:tutStep,cuts:tutCuts,deaths:tutDeaths,met:tutGoalMet,glu:+tutGluDemo.toFixed(2),stuck:cells.filter(c=>c.stick).length}),
-  comboState:()=>({combo,max:maxCombo,pop:combos.length}),
   reset
 };
 })();
