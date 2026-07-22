@@ -134,7 +134,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v99';   // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v100';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -394,11 +394,18 @@ let best=+(localStorage.getItem('yeastBestScore')||0);   // ★スコア制に�
 //   ※20度は満タン＝ゲームオーバー時のみ（生存クリアで20度にはならない）。
 function bevOf(deg){
   if(deg<1) return {msg:'💡 1度未満＝ノンアルコール飲料くらい！ 元気な酵母'};
-  // 発酵のお酒を中心に度数順（どぶろく・マッコリはまさに酵母発酵）
-  const T=[[4,'シードル',3],[6,'ビール',5],[9,'マッコリ',7],[11.5,'どぶろく',10],
-    [13.5,'ワイン',12],[16,'日本酒',15],[19,'紹興酒',17],[999,'日本酒の原酒',20]];
-  for(const [th,name,d] of T) if(deg<th) return {name,deg:d};
-  return {name:'日本酒の原酒',deg:20};   // 20度＝発酵で到達する上限（蒸留の焼酎でなく原酒が筋。酵母が生きられない限界）
+  // 度数順。desc＝「どんなお酒か」の軽い一言（どれも酵母のアルコール発酵で造る醸造酒＝このゲームそのもの）。
+  const T=[
+    [4,   'シードル',    3, 'りんごを発酵させた果実のお酒🍎'],
+    [6,   'ビール',      5, '麦芽（大麦）を発酵させた醸造酒🍺'],
+    [9,   'マッコリ',    7, '米を発酵させた韓国のにごり酒🥛'],
+    [11.5,'どぶろく',   10, '米を発酵させたにごり酒。日本酒の原型🍶'],
+    [13.5,'ワイン',     12, 'ぶどうを発酵させた果実のお酒🍷'],
+    [16,  '日本酒',     15, '米を麹と酵母で発酵させた醸造酒🍶'],
+    [19,  '紹興酒',     17, 'もち米を発酵させた中国の醸造酒🥃'],
+    [999, '日本酒の原酒',20, '水で割らない、発酵の限界近くの日本酒🍶']];
+  for(const [th,name,d,desc] of T) if(deg<th) return {name,deg:d,desc};
+  return {name:'日本酒の原酒',deg:20,desc:'水で割らない、発酵の限界近くの日本酒🍶'};   // 20度＝発酵で到達する上限（蒸留の焼酎でなく原酒が筋）
 }
 function finish(lost){
   finished=true; gameover=!!lost; dyingOut=0;
@@ -415,7 +422,7 @@ function finish(lost){
   elRes.querySelector('.b').textContent=(isBest&&!lost?'さいこう記録！　':'')+`これまでの最高 ${best}点`;
   // ★豆知識：最終アルコール度数を、近い強さのお酒にたとえて知育に（ユーザー案）
   const bev=bevOf(alc*DEG_MAX);
-  elRes.querySelector('.k').textContent=bev.msg||`💡 ${deg}度は ${bev.name}（約${bev.deg}度）くらいの強さ`;
+  elRes.querySelector('.k').textContent=bev.msg||`💡 ${deg}度は「${bev.name}」（約${bev.deg}度）くらい。${bev.desc}`;
   elRes.style.opacity='1'; elHint.style.opacity='0';
   elRes.querySelector('.btns').classList.remove('on'); resT=0;
   try{ const a=actx(), t=a.currentTime;
