@@ -66,8 +66,7 @@
     background:rgba(120,150,190,.12);border-radius:11px;padding:9px 13px;line-height:1.6}
   #res .btns{margin-top:24px;display:flex;gap:12px;justify-content:center;opacity:0;pointer-events:none;transition:opacity .45s}
   #res .btns.on{opacity:1;pointer-events:auto}   /* 結果が出そろってから（RESULT_WAIT後）押せる＝振り終わりの指で誤爆しない */
-  #res button{font-family:inherit;font-weight:700;font-size:15px;letter-spacing:.02em;border:none;cursor:pointer;
-    border-radius:12px;padding:13px 26px;transition:transform .07s}
+  /* ボタンの基本サイズは #ov button,#res button に集約（全ボタン共通）。ここは色だけ */
   #res .again{color:#fff;background:linear-gradient(180deg,#e8b658,#d69a34);box-shadow:0 4px 0 #b07f22}
   #res .again:active{transform:translateY(2px);box-shadow:0 1px 0 #b07f22}
   #res .quit{color:#c58a2e;background:transparent;box-shadow:0 0 0 2px #e2ba79 inset}
@@ -84,8 +83,9 @@
   #ov .tag{margin:12px 0 0;font-size:13.5px;font-weight:500;line-height:1.75;letter-spacing:.02em;color:#8a7f6d;max-width:19em}
   #ov .tag b{color:#c58a2e;font-weight:700}
   #ov .btnrow{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:28px}
-  #ov button{font-family:inherit;font-weight:700;font-size:16px;letter-spacing:.02em;border:none;cursor:pointer;
-    border-radius:13px;padding:15px 30px;transition:transform .07s}
+  /* ★はじめる/あそびかた/もう一度/やめる を同じ大きさに（文字数が違っても幅を揃える） */
+  #ov button,#res button{font-family:inherit;font-weight:700;font-size:16px;letter-spacing:.02em;border:none;cursor:pointer;
+    border-radius:13px;padding:14px 20px;min-width:144px;transition:transform .07s}
   #ov .prim{color:#fff;background:linear-gradient(180deg,#e8b658,#d69a34);box-shadow:0 5px 0 #b07f22}
   #ov .prim:active{transform:translateY(3px);box-shadow:0 2px 0 #b07f22}
   #ov .ghost{color:#c58a2e;background:transparent;box-shadow:0 0 0 2px #e2ba79 inset}
@@ -143,7 +143,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v101';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v102';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
