@@ -146,7 +146,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v114';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v115';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -1609,6 +1609,26 @@ function draw(t){
   }
   g.restore();
   g.restore();   // 画面揺れ
+  // ★ラスト5秒：中央に大きなカウントダウン数字（5→1）。音（残り5秒で倍速チッチッ）と同期。
+  //   毎秒ドンと大きく出て→すっと落ち着き→前半で消える（後半は盤面が見えて切れる）。
+  if(started && !finished && !tutMode && !dyingOut){
+    const left=TIME-runT;
+    if(left>0 && left<=5){
+      const n=Math.ceil(left);              // 5,4,3,2,1
+      const p=n-left;                        // その数字が出てからの進み 0→1
+      const pop=1+0.85*Math.exp(-p*7);       // 出た瞬間に大きく→落ち着く
+      const al=(p<0.5?1:Math.max(0,1-(p-0.5)/0.5))*0.92;   // 前半くっきり→後半フェード（盤面を見せる）
+      g.save();
+      g.translate(cx,cy); g.scale(pop,pop); g.globalAlpha=al;
+      g.textAlign='center'; g.textBaseline='middle';
+      g.font='800 '+Math.round(VR*0.95)+'px system-ui,-apple-system,sans-serif';
+      g.lineWidth=VR*0.055; g.strokeStyle='rgba(255,255,255,0.95)'; g.lineJoin='round';
+      g.strokeText(n,0,0);                   // 白フチ＝背景・酵母と混ざらない
+      g.fillStyle='#e0762b';                 // 温かいオレンジ（警告しすぎず世界観に合う）
+      g.fillText(n,0,0);
+      g.restore();
+    }
+  }
   // 時間切れ：盤面を落ち着かせる（そうしないと結果の文字が酵母に埋もれて読めない）
   if(finished){ g.fillStyle='rgba(239,231,217,.74)'; g.fillRect(0,0,W,H); }
 }
