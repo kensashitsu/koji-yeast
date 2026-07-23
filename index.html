@@ -146,7 +146,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v111';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v112';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -1037,7 +1037,7 @@ function split(c,nx,ny,cutAx){
 }
 
 // ---- 更新 ----
-let last=0, SLOWMO=1;   // SLOWMO は __dbg.slow(k) で変える（検証用・通常1）
+let last=0, SLOWMO=1, drawT=0;   // SLOWMO は __dbg.slow(k) で変える（検証用・通常1）。drawT＝描画用の時計（ポーズ中は止める＝タイトル画面で盤面を静止させる）
 function step(dt){
   const occ=cells.length, living=livingCount();   // 死体は場所(occ,CAP)を塞ぐが出芽はしない
   const win=winNow();                             // 猶予も混雑連動（このフレームの占有で決まる）
@@ -1583,6 +1583,9 @@ function draw(t){
 function loop(now){
   const t=now/1000;
   let dt=last?Math.min(0.05,t-last)*SLOWMO:0; last=t;   // SLOWMO＝検証用のスロー再生（通常1）
+  // ★タイトル画面表示中はポーズ＝盤面を完全に静止（酵母もグルコースの点滅も止める）。dtと描画時計の両方を止める。
+  const titlePaused = !elOv.hidden;
+  if(titlePaused) dt=0;
   if(started && !finished && !tutMode && !dyingOut){ runT+=dt; if(runT>=TIME) finish(false); }   // ★チュートリアル中/全滅演出中は時間を進めない
   if(dyingOut>0 && !finished){ dyingOut+=dt; if(dyingOut>=GAMEOVER_HOLD) finish(true); }          // 全酵母のフェードを見せてから結果へ
   if(tutMode){
@@ -1596,7 +1599,8 @@ function loop(now){
     // 受け付け可能になった時に初めて「タップで もう一度」を出す＝押せる合図になる
     if(was<RESULT_WAIT && resT>=RESULT_WAIT) elRes.querySelector('.btns').classList.add('on');
   }
-  step(finished?0:dt); draw(t);   // 時間切れ＝そのまま静止して結果を見せる
+  drawT += dt;                    // ポーズ中は dt=0 で止まる＝タイトル画面では時間依存の演出も静止
+  step(finished?0:dt); draw(drawT);   // 時間切れ＝そのまま静止して結果を見せる
   // アルコール度数バーの更新。危険域(0.6超)は寒色テーマのまま点滅（明滅）で注意を促す
   //   ※色相を赤へ振ると途中で緑を通り「安全」に見えるので不可。青のまま明滅＝満タンほど速く明るく。
   elAlcFill.style.width=(alc*100).toFixed(1)+'%';
