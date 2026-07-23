@@ -146,7 +146,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v110';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v111';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -314,8 +314,8 @@ const elOv=document.getElementById('ov'), elCoach=document.getElementById('coach
       elCoachTxt=document.getElementById('coachtxt'), elCoachNext=document.getElementById('coachnext');
 let tutMode=false, tutStep=0, tutGoalMet=false, tutCuts=0, tutDeaths=0;   // すべて tutMode ガード＝本番に影響しない
 let tutGluDemo=1;         // 紹介ステップ(0)でグルコースが減る様子を見せるデモ用の残量(1→0でループ)
-const TUT_STRESS_STEP=3;  // このステップ(=ストレス/アルコール発酵の説明)から危険域(アルコール・炭酸ガス)を見せる。それより前は静かに待たせる
-const TUT_DEATH_STEP=5;   // このステップ(=放置で死ぬ説明)から死を解禁。発酵〜泡ステップの間はストレスは出すが死なせない
+const TUT_STRESS_STEP=4;  // このステップ(=ストレス/アルコール発酵の説明)から危険域(アルコール・炭酸ガス)を見せる。それより前は静かに待たせる（★二刀流ステップ挿入で3→4）
+const TUT_DEATH_STEP=6;   // このステップ(=放置で死ぬ説明)から死を解禁。発酵〜泡ステップの間はストレスは出すが死なせない（★同 5→6）
 let W=0,H=0,DPR=1,cx=0,cy=0,VR=0,R0=0;
 function resize(){
   DPR=Math.min(2,window.devicePixelRatio||1);
@@ -495,6 +495,7 @@ const TUT=[
   { html:"👀 これが<b>酵母</b>。まわりの<b>ピンクの粒（グルコース君）</b>は酵母の<b>エサ（グルコース）</b>だよ。見ていると<b>少しずつ減っていく</b>でしょ？ これが<b>残り時間</b>にもなっているんだ。", goal:null },
   { html:"酵母は<b>体から芽をふくらませて</b>増えるよ（＝<b>出芽</b>）。芽の根元にできる<b>金色の首（くびれ）</b>を、ゆびで<b>さっとなぞって</b>ちぎってみよう！", goal:()=>tutCuts>=1 },
   { html:"ちぎるたびに<b>酵母が増える</b>！ どんどん首をなぞって<b>増やそう</b>（あと数回）。", goal:()=>tutCuts>=4 },
+  { html:"✌️ スマホなら<b>両手が使える</b>！ <b>2本の指</b>で金の首を<b>同時になぞれば、2匹いっぺんに</b>ちぎれるよ（<b>二刀流</b>）。混み合ってきたら使うと一気に増やせる！", goal:null },
   { html:"首を<b>放っておく</b>と、酵母は<b>ストレス</b>で弱り、<b>アルコール発酵</b>を始めるよ🍶 <b>アルコール</b>（上のバー）と<b>炭酸ガスの泡</b>を出すんだ。しばらく<b>放置</b>して見てみよう。", goal:()=>alc>=0.08 },
   { html:"酵母は<b>炭酸ガスの泡にくっつく</b>性質があるよ（表面が水をはじくから）。泡は<b>ほかの泡と合体して どんどん大きく</b>なり、育ちすぎると<b>破裂</b>！ くっついた酵母は<b>吹き飛ばされて</b>バラバラに。泡に乗った酵母を見てみよう。", goal:()=>cells.some(c=>c.stick) },
   { html:"さらに放っておくと、酵母は<b>死んで灰色</b>に…（その場に残って<b>場所もふさぐ</b>）。1匹<b>死ぬ</b>のを見てみよう。", goal:()=>tutDeaths>=1 },
