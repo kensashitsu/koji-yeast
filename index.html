@@ -146,7 +146,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v113';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v114';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -1092,6 +1092,9 @@ function step(dt){
     // 熟してからの猶予。使い切ると母細胞ごと死滅
     if(c.bud>=1){
       c.over+=dt;
+      // ★スタート前（最初のちぎり前＝started=false）は「金の首で待っているだけ」＝死なせない・ストレスも出さない。
+      //   （タイマーが止まっているのに死体だけ増える不具合の対策。over を危険域手前で頭打ちに）
+      if(!started) c.over=Math.min(c.over, win*0.5);
       // ★チュートリアルの2段ガード（本番は無関係）：
       //   ・発酵の説明(TUT_STRESS_STEP)より前＝危険域に入れない＝汗もアルコールも死も無し（金の首のまま静かに待つ）。
       //   ・発酵の説明中(〜TUT_DEATH_STEPの手前)＝warn0.95で頭打ち＝ストレス(アルコール/炭酸ガス/汗)は出すが死なせない。
