@@ -146,7 +146,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v112';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v113';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -481,7 +481,7 @@ function finish(lost){
 }
 function restart(){
   reset(); gas.length=0; deaths.length=0; bits.length=0; rings.length=0; strokes.clear(); cutflash.length=0; taps.length=0; threads.length=0;
-  runT=0; started=false; finished=false; cut=0; gasAcc=0; alc=0; gameover=false; dyingOut=0; fermentT=0;
+  runT=0; started=false; finished=false; cut=0; gasAcc=0; alc=0; gameover=false; dyingOut=0; fermentT=0; tickAcc=0;
   elFerment.classList.remove('on');
   elRes.querySelector('.u').textContent='点';
   elRes.querySelector('.btns').classList.remove('on');   // ★透明な結果ボタンがプレイ中にタップを奪わないよう解除
@@ -1003,6 +1003,36 @@ function dieSound(){
     g2.gain.exponentialRampToValueAtTime(0.001,t+0.4);
     o.connect(g2).connect(a.destination); o.start(t); o.stop(t+0.42);
   }catch(e){}
+}
+// ★残り時間の秒針＝「チッ」。時計の秒針っぽい、ごく短い高域の当たり。1秒ごとに等間隔で鳴らす（グルコース＝時間の減りを音でも）。
+//   煩さ対策のつまみ：TICK_VOL(音量)／TICK_FROM(残りこの秒数から鳴らす。TIMEなら最初から)／TICK_RUSH(残りこの秒数で間隔を半分に＝終盤だけ焦る)。
+let TICK_VOL=0.10;              // 音量（他の音より控えめ＝主張しすぎない）
+let TICK_FROM=TIME;            // 残りこの秒数以下で鳴り始める（TIME=最初から等間隔チッチッ）
+let TICK_RUSH=5;              // 残りこの秒数で「チッチッ」を倍速に（終盤の焦り。0で無効）
+let tickAcc=0;               // 前回のチッからの経過
+function tickSound(){
+  try{ const a=actx(), t=a.currentTime;
+    // ごく短い高域ノイズの当たり（膜を弾くような「チッ」）＋薄い高音サインで芯を出す
+    const len=Math.max(4,Math.floor(a.sampleRate*0.008)), buf=a.createBuffer(1,len,a.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.4);
+    const s=a.createBufferSource(); s.buffer=buf;
+    const bp=a.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=3400; bp.Q.value=1.4;
+    const ng=a.createGain(); ng.gain.value=TICK_VOL;
+    s.connect(bp).connect(ng).connect(a.destination); s.start(t);
+    const o=a.createOscillator(); o.type='sine'; o.frequency.setValueAtTime(2100,t);
+    const g=a.createGain(); g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(TICK_VOL*0.7,t+0.003); g.gain.exponentialRampToValueAtTime(0.0001,t+0.03);
+    o.connect(g).connect(a.destination); o.start(t); o.stop(t+0.04);
+  }catch(e){}
+}
+// 毎フレーム呼ぶ。プレイ中(started/未終了/本番)だけ、残り時間に応じて等間隔で「チッ」。
+function tickTimer(dt){
+  if(!ac || !started || finished || tutMode || dyingOut){ tickAcc=0; return; }
+  const left=Math.max(0, TIME-runT);
+  if(left>TICK_FROM){ tickAcc=0; return; }        // まだ鳴らす時間帯じゃない
+  const gap=(TICK_RUSH>0 && left<=TICK_RUSH)?0.5:1.0;   // 終盤は倍速
+  tickAcc+=dt;
+  if(tickAcc>=gap){ tickAcc-=gap; tickSound(); }
 }
 
 let cut=0;
@@ -1587,6 +1617,7 @@ function loop(now){
   const titlePaused = !elOv.hidden;
   if(titlePaused) dt=0;
   if(started && !finished && !tutMode && !dyingOut){ runT+=dt; if(runT>=TIME) finish(false); }   // ★チュートリアル中/全滅演出中は時間を進めない
+  tickTimer(dt);   // ★残り時間の秒針「チッチッ」（プレイ中だけ・タイトル/チュートリアルでは鳴らない）
   if(dyingOut>0 && !finished){ dyingOut+=dt; if(dyingOut>=GAMEOVER_HOLD) finish(true); }          // 全酵母のフェードを見せてから結果へ
   if(tutMode){
     // ★紹介ステップ(0)：グルコースが「減っていく」様子を実演。★本番と同じ速さ(dt/TIME=30秒で1周)＝実際の減り方を見せる。本番の時間は動かさない。
@@ -1642,6 +1673,8 @@ window.__dbg={
   ripeTargets(){ return cells.filter(c=>!c.dead&&c.bud>=CUT_MIN).map(c=>{ const a=budAng(c),nd=neckD(c);
     return {x:c.x+Math.cos(a)*nd+c.jx, y:c.y+Math.sin(a)*nd+c.jy, a}; }); },
   strokeN:()=>strokes.size,
+  // 秒針チッチッの微調整：vol=音量／from=残りこの秒数から鳴る(TIMEで最初から)／rush=残りこの秒で倍速(0で無効)
+  setTick(o){ if(o.vol!==undefined)TICK_VOL=o.vol; if(o.from!==undefined)TICK_FROM=o.from; if(o.rush!==undefined)TICK_RUSH=o.rush; },
   best:()=>best,
   faces:()=>{const m={};for(const c of cells){const w=Math.min(1,c.over/winNow());const f=faceOf(c,w);m[f]=(m[f]|0)+1;}return m;},
   gasArea:()=>gas.reduce((s,b)=>s+Math.PI*b.r*b.r,0)/(Math.PI*VR*VR),
