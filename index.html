@@ -146,7 +146,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v115';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v116';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -1010,6 +1010,7 @@ let TICK_VOL=0.10;              // 音量（他の音より控えめ＝主張し
 let TICK_FROM=TIME;            // 残りこの秒数以下で鳴り始める（TIME=最初から等間隔チッチッ）
 let TICK_RUSH=5;              // 残りこの秒数で「チッチッ」を倍速に（終盤の焦り。0で無効）
 let tickAcc=0;               // 前回のチッからの経過
+let CD_FILLA=0.5;            // ★ラスト5秒カウントダウンの数字の「塗り」の不透明度（フチは常に不透明）。低いほど後ろの首が透ける
 function tickSound(){
   try{ const a=actx(), t=a.currentTime;
     // ごく短い高域ノイズの当たり（膜を弾くような「チッ」）＋薄い高音サインで芯を出す
@@ -1623,7 +1624,8 @@ function draw(t){
       g.textAlign='center'; g.textBaseline='middle';
       g.font='800 '+Math.round(VR*0.95)+'px system-ui,-apple-system,sans-serif';
       g.lineWidth=VR*0.055; g.strokeStyle='rgba(255,255,255,0.95)'; g.lineJoin='round';
-      g.strokeText(n,0,0);                   // 白フチ＝背景・酵母と混ざらない
+      g.strokeText(n,0,0);                   // 白フチ＝背景・酵母と混ざらない（不透明のまま＝読みやすさ維持）
+      g.globalAlpha=al*CD_FILLA;             // ★中身の塗りだけ半透明＝後ろの首が透けて見える
       g.fillStyle='#e0762b';                 // 温かいオレンジ（警告しすぎず世界観に合う）
       g.fillText(n,0,0);
       g.restore();
@@ -1698,6 +1700,7 @@ window.__dbg={
   strokeN:()=>strokes.size,
   // 秒針チッチッの微調整：vol=音量／from=残りこの秒数から鳴る(TIMEで最初から)／rush=残りこの秒で倍速(0で無効)
   setTick(o){ if(o.vol!==undefined)TICK_VOL=o.vol; if(o.from!==undefined)TICK_FROM=o.from; if(o.rush!==undefined)TICK_RUSH=o.rush; },
+  setCdFill(v){ CD_FILLA=v; },   // カウントダウン数字の塗りの不透明度（0=フチだけ／1=ベタ塗り）
   best:()=>best,
   faces:()=>{const m={};for(const c of cells){const w=Math.min(1,c.over/winNow());const f=faceOf(c,w);m[f]=(m[f]|0)+1;}return m;},
   gasArea:()=>gas.reduce((s,b)=>s+Math.PI*b.r*b.r,0)/(Math.PI*VR*VR),
