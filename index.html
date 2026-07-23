@@ -81,16 +81,11 @@
     text-align:center;padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));
     background:rgba(243,238,228,.80);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
   #ov[hidden]{display:none}
-  #ov .kun{margin-bottom:14px;filter:drop-shadow(0 6px 14px rgba(150,130,100,.28))}
-  #ov h1{margin:0;font-size:46px;font-weight:800;letter-spacing:.12em;color:#6a5c46}
-  #ov .tag{margin:16px 0 0;font-size:13.5px;font-weight:500;line-height:1.9;letter-spacing:.04em;color:#8a7f6d;max-width:18em}
+  #ov .kun{margin-bottom:8px;filter:drop-shadow(0 6px 14px rgba(150,130,100,.28))}
+  #ov h1{margin:0;font-size:42px;font-weight:800;letter-spacing:.05em;color:#6a5c46}
+  #ov .tag{margin:12px 0 0;font-size:13.5px;font-weight:500;line-height:1.75;letter-spacing:.02em;color:#8a7f6d;max-width:19em}
   #ov .tag b{color:#c58a2e;font-weight:700}
-  #ov .btnrow{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:34px}
-  /* ★タイトル：金の首がたまにキラッと光る（唯一の微アニメ。ポーズ盤面の邪魔をしない控えめさ） */
-  @keyframes ykTwinkle{0%,72%,100%{opacity:0;transform:scale(.4)}80%{opacity:1;transform:scale(1)}88%{opacity:.85;transform:scale(1.05)}}
-  @keyframes ykShine{0%,70%,100%{opacity:0}80%{opacity:.9}92%{opacity:0}}
-  #ov .kun .spark{transform-box:fill-box;transform-origin:center;animation:ykTwinkle 3.2s ease-in-out infinite}
-  #ov .kun .shine{animation:ykShine 3.2s ease-in-out infinite}
+  #ov .btnrow{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:28px}
   /* ★はじめる/あそびかた/もう一度/やめる を同じ大きさに（文字数が違っても幅を揃える） */
   #ov button,#res button{font-family:inherit;font-weight:700;font-size:16px;letter-spacing:.02em;border:none;cursor:pointer;
     border-radius:13px;padding:14px 20px;min-width:144px;transition:transform .07s}
@@ -98,7 +93,7 @@
   #ov .prim:active{transform:translateY(3px);box-shadow:0 2px 0 #b07f22}
   #ov .ghost{color:#c58a2e;background:transparent;box-shadow:0 0 0 2px #e2ba79 inset}
   #ov .ghost:active{transform:translateY(2px)}
-  #ov .vv{margin-top:26px;font-size:11px;letter-spacing:.08em;color:#bdb19a;font-variant-numeric:tabular-nums}
+  #ov .vv{margin-top:24px;font-size:11px;letter-spacing:.08em;color:#bdb19a;font-variant-numeric:tabular-nums}
   /* ---- あそびかたチュートリアルのコーチ吹き出し ---- */
   #coach{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom,0) + 12px);z-index:21;
     display:flex;align-items:center;gap:11px;background:rgba(255,252,246,.97);border:1.5px solid #e2ba79;
@@ -125,28 +120,21 @@
   <div class="btns" id="resbtns"><button class="again" id="resagain">もう一度</button><button class="quit" id="resquit">やめる</button></div></div>
 <!-- ★タイトル画面（お椀の上に重なる。はじめる／あそびかた） -->
 <div id="ov">
-  <svg class="kun" viewBox="0 0 130 130" width="124" height="124" aria-hidden="true">
-    <defs><radialGradient id="yk" cx="38%" cy="32%" r="74%">
-      <stop offset="0" stop-color="#fdf0d4"/><stop offset=".55" stop-color="#f0cf94"/><stop offset="1" stop-color="#e0b473"/>
+  <svg class="kun" viewBox="0 0 120 120" width="98" height="98" aria-hidden="true">
+    <defs><radialGradient id="yk" cx="38%" cy="34%" r="72%">
+      <stop offset="0" stop-color="#fbeccd"/><stop offset="1" stop-color="#e3ba7e"/>
     </radialGradient></defs>
-    <!-- 金の首：暗い下地＋金＋明るい芯でくっきり立体に -->
-    <line x1="50" y1="52" x2="66" y2="66" stroke="#7a5014" stroke-width="14" stroke-linecap="round" opacity=".5"/>
-    <line x1="50" y1="52" x2="66" y2="66" stroke="#f2bd34" stroke-width="10" stroke-linecap="round"/>
-    <line x1="50" y1="52" x2="66" y2="66" stroke="#ffe08a" stroke-width="4" stroke-linecap="round"/>
-    <circle cx="44" cy="46" r="19.5" fill="url(#yk)" stroke="rgba(120,85,40,.38)" stroke-width="2.4"/>
-    <circle cx="77" cy="72" r="32.5" fill="url(#yk)" stroke="rgba(120,85,40,.38)" stroke-width="2.4"/>
-    <ellipse cx="66" cy="58" rx="11" ry="7" fill="rgba(255,255,255,.5)"/>
-    <ellipse cx="38" cy="40" rx="6" ry="4" fill="rgba(255,255,255,.5)"/>
-    <ellipse cx="61" cy="79" rx="7.5" ry="5.8" fill="rgba(232,150,150,.45)"/>
-    <ellipse cx="93" cy="79" rx="7.5" ry="5.8" fill="rgba(232,150,150,.45)"/>
-    <circle cx="67" cy="67" r="3.9" fill="#5a4028"/><circle cx="86" cy="67" r="3.9" fill="#5a4028"/>
-    <path d="M69 76 Q77 84 85 76" fill="none" stroke="#5a4028" stroke-width="3.6" stroke-linecap="round"/>
-    <!-- 金の首のキラッ（CSSアニメ。ふだんは透明で、たまに光る） -->
-    <circle class="shine" cx="58" cy="59" r="9" fill="rgba(255,255,255,.55)"/>
-    <path class="spark" d="M58 51 L60 58 L67 59 L60 60 L58 67 L56 60 L49 59 L56 58 Z" fill="#fff"/>
+    <line x1="47" y1="49" x2="61" y2="61" stroke="#7a5014" stroke-width="13" stroke-linecap="round" opacity=".5"/>
+    <line x1="47" y1="49" x2="61" y2="61" stroke="#f5c033" stroke-width="9" stroke-linecap="round"/>
+    <circle cx="41" cy="43" r="18" fill="url(#yk)" stroke="rgba(120,85,40,.4)" stroke-width="2.4"/>
+    <circle cx="71" cy="67" r="30" fill="url(#yk)" stroke="rgba(120,85,40,.4)" stroke-width="2.4"/>
+    <ellipse cx="56" cy="73" rx="7" ry="5.5" fill="rgba(232,150,150,.42)"/>
+    <ellipse cx="86" cy="73" rx="7" ry="5.5" fill="rgba(232,150,150,.42)"/>
+    <circle cx="62" cy="62" r="3.7" fill="#5a4028"/><circle cx="80" cy="62" r="3.7" fill="#5a4028"/>
+    <path d="M64 70 Q71 77 78 70" fill="none" stroke="#5a4028" stroke-width="3.4" stroke-linecap="round"/>
   </svg>
   <h1>Ｙースト</h1>
-  <p class="tag"><b>金の首</b>を さっと なぞって<br>酵母を <b>ちぎって増やす</b>。<br>どこまで増やせる？</p>
+  <p class="tag"><b>金の首</b>を さっと なぞって<br>酵母を <b>ちぎって増やす</b>。<br>制限時間内に どこまで増やせる？</p>
   <div class="btnrow">
     <button class="prim" id="ovstart">はじめる</button>
     <button class="ghost" id="ovtut">あそびかた</button>
@@ -158,7 +146,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v119';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v120';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
