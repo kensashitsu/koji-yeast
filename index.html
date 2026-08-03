@@ -83,7 +83,9 @@
   #ov[hidden]{display:none}
   #ov .kun{margin-bottom:8px;filter:drop-shadow(0 6px 14px rgba(150,130,100,.28))}
   #ov h1{margin:0;font-size:42px;font-weight:800;letter-spacing:.05em;color:#6a5c46}
-  #ov .tag{margin:12px 0 0;font-size:13.5px;font-weight:500;line-height:1.75;letter-spacing:.02em;color:#8a7f6d;max-width:19em}
+  /* ★シリーズ共通の副題（3作とも同じ位置・同じ字送り。色だけ各作のイメージカラー） */
+  #ov .sub{margin:7px 0 0;font-size:12.5px;font-weight:800;letter-spacing:.22em;color:#c58a2e;opacity:.95}
+  #ov .tag{margin:11px 0 0;font-size:13.5px;font-weight:500;line-height:1.75;letter-spacing:.02em;color:#8a7f6d;max-width:19em}
   #ov .tag b{color:#c58a2e;font-weight:700}
   #ov .btnrow{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:28px}
   /* ★はじめる/あそびかた/もう一度/やめる を同じ大きさに（文字数が違っても幅を揃える） */
@@ -134,6 +136,9 @@
     <path d="M64 70 Q71 77 78 70" fill="none" stroke="#5a4028" stroke-width="3.4" stroke-linecap="round"/>
   </svg>
   <h1>Ｙースト</h1>
+  <!-- ★シリーズ共通の副題（Ｚ「甘みか、失活か。」／Ｘ「発酵か、腐敗か。」と同じ形）＝
+       その作品の【両側リスク】をそのまま一行にする -->
+  <div class="sub">酵母か、アルコールか。</div>
   <p class="tag"><b>金の首</b>を さっと なぞって<br>酵母を <b>ちぎって増やす</b>。<br>制限時間内に どこまで増やせる？</p>
   <div class="btnrow">
     <button class="prim" id="ovstart">はじめる</button>
@@ -146,7 +151,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v120';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v121';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
