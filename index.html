@@ -160,7 +160,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v124';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v125';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -221,6 +221,20 @@ const ALC_PER_DEATH = 1/DEG_MAX; // 死んだ瞬間の上昇＝1度（主源）
 let   BUD_LO    = 10;    // 序盤(空)に同時に出せる芽の数の上限
 let   BUD_HI    = 6;     // ★満杯(混雑)時の同時上限（v86：緩すぎたので5→6に戻す＝後半の忙しさ・手応えを復活）
 let   BUD_CURVE = 0.7;   // 詰まるほど減らすカーブ。1=直線／<1=早めに減る／>1=終盤で一気に
+// ★v125 適応型の的数：二刀流で追いつけている人にだけ的を増やす。
+//   固定値では両立しないことを実測で確認済み＝的12にすると二刀流は無傷のまま片手だけ全滅する
+//   （的の数は難易度ではなく「両手を強制するスイッチ」だった）。so 処理できている人にだけ足す。
+//   ★戻し方：ADAPT=false にすると budCap は従来式そのものに戻る（他の挙動は一切変わらない）。
+let   ADAPT      = true; // ← false で完全に従来へ
+let   ADAPT_MAX  = 16;   // 追いつけている人に許す同時出芽の上限（従来式の値を上回る分だけ足す）
+let   ADAPT_UP   = 1.0;  // 手が余っているとき1秒あたり増える的の数（ゆっくり上げる）
+let   ADAPT_DOWN = 3.0;  // 詰まっているとき1秒あたり減る的の数（下げは速く＝詰まりからの救済を優先）
+let   ADAPT_SLACK= 3;    // 熟した首がこれ以下なら「切る相手が足りない＝手が余っている」
+//   ↑二刀流が気持ちよく回るのは行列3〜5本。1本では「同時に切る／離れた2本を僅差で切る」場面が起きない。
+let   ADAPT_CALM = 2.5;  // 最後の死からこれだけ経っていれば「捌けている」とみなす（秒）
+let   ADAPT_MIN_N= 10;   // ★これ未満の匹数では増やさない（序盤は的が少なくて当然＝手が余っていると誤判定するため）
+let   adaptBonus = 0;    // 従来式に上乗せしている的の数（0＝従来と同じ）
+let   adaptDead  = 0, adaptDeathT = 99;   // 死者数の直近値／最後の死からの経過
 let   BUD_SPEED = 0.32;  // 1つの芽が熟す速さ（0→1/秒）。約3.1秒で切り頃。★ユーザー「もう少し早め」（0.28→0.32／0.35は速すぎた）
 // ★序盤の立ち上がりブースト（ユーザー「開始〜5匹まで増やすテンポが悪い」）。個体数が少ないほど熟すのを速め、
 //   EARLY_N 匹に達すると 1倍（＝中盤以降の難易度は一切変えない）。1匹のとき最大 (1+EARLY_BOOST) 倍。
@@ -496,6 +510,7 @@ function finish(lost){
 function restart(){
   reset(); gas.length=0; deaths.length=0; bits.length=0; rings.length=0; strokes.clear(); cutflash.length=0; taps.length=0; threads.length=0;
   runT=0; started=false; finished=false; cut=0; gasAcc=0; alc=0; gameover=false; dyingOut=0; fermentT=0; tickAcc=0;
+  adaptBonus=0; adaptDead=0; adaptDeathT=99;      // ★適応型の的数をリセット（前回の腕前を持ち越さない）
   elFerment.classList.remove('on');
   elRes.querySelector('.u').textContent='点';
   elRes.querySelector('.btns').classList.remove('on');   // ★透明な結果ボタンがプレイ中にタップを奪わないよう解除
@@ -1091,7 +1106,18 @@ function step(dt){
   const win=winNow();                             // 猶予も混雑連動（このフレームの占有で決まる）
   // ★同時に出ていられる芽の数の上限（混雑ほど少ない）。今この瞬間に育ち中の芽の数を数え、
   //   空きがあれば休んでいる細胞が新しく芽を出せる＝的が上限以上に増えない。
-  const budCap=Math.round(BUD_LO+(BUD_HI-BUD_LO)*Math.pow(Math.min(1,occ/CAP),BUD_CURVE));
+  const budBase=Math.round(BUD_LO+(BUD_HI-BUD_LO)*Math.pow(Math.min(1,occ/CAP),BUD_CURVE));
+  // ★適応：切り頃の行列(ripeN)が短く、しばらく死者も出ていない＝捌けている → 的をゆっくり増やす。
+  //   行列が伸びた／死んだ → すぐ減らす。ADAPT=false なら adaptBonus は常に0＝従来式のまま。
+  let ripeN=0; for(const c of cells) if(!c.dead && c.bud>=CUT_MIN) ripeN++;
+  const deadNow=occ-living;
+  if(deadNow>adaptDead){ adaptDead=deadNow; adaptDeathT=0; } else adaptDeathT+=dt;
+  if(ADAPT && started && !finished){
+    if(ripeN<=ADAPT_SLACK && adaptDeathT>=ADAPT_CALM && living>=ADAPT_MIN_N) adaptBonus+=ADAPT_UP*dt;
+    else if(ripeN>=ADAPT_SLACK+3 || adaptDeathT<ADAPT_CALM)                  adaptBonus-=ADAPT_DOWN*dt;
+    adaptBonus=Math.max(0,Math.min(ADAPT_MAX-budBase,adaptBonus));
+  } else adaptBonus=0;
+  const budCap=Math.round(budBase+adaptBonus);
   let active=0; for(const c of cells) if(!c.dead && c.bud>0.001) active++;
   // ★序盤ブースト：生きた個体が EARLY_N 未満のとき熟す速さを上げる（1匹で最大→EARLY_N匹で1倍）。テンポ改善。
   const budBoost=1+EARLY_BOOST*Math.max(0,1-(living-1)/(EARLY_N-1));
@@ -1701,6 +1727,11 @@ window.__dbg={
     left:started?Math.max(0,1-runT/TIME):1}),
   setDiff(lo,hi,win){ WIN_LO=WIN_HI=win; }, newGame(){ restart(); },   // 後方互換：3つ目 win で猶予を平坦に（テストの9999で死凍結）
   // 的の数・熟す速さ・猶予を個別に（difficulty.html 用）。blo/bhi/bcv/bsp＝的、wlo/whi/wcv＝猶予（混雑で伸びる）
+  // ★適応型の的数（v125）。setAdapt({on:false}) で従来へ即復帰＝A/B比較用
+  setAdapt(o){ if(o.on!==undefined)ADAPT=!!o.on; if(o.max!==undefined)ADAPT_MAX=o.max;
+    if(o.up!==undefined)ADAPT_UP=o.up; if(o.down!==undefined)ADAPT_DOWN=o.down;
+    if(o.slack!==undefined)ADAPT_SLACK=o.slack; if(o.calm!==undefined)ADAPT_CALM=o.calm; if(o.minN!==undefined)ADAPT_MIN_N=o.minN; },
+  getAdapt:()=>({on:ADAPT,max:ADAPT_MAX,up:ADAPT_UP,down:ADAPT_DOWN,slack:ADAPT_SLACK,calm:ADAPT_CALM,bonus:+adaptBonus.toFixed(2)}),
   setTune(o){ if(o.blo!==undefined)BUD_LO=o.blo; if(o.bhi!==undefined)BUD_HI=o.bhi; if(o.bcv!==undefined)BUD_CURVE=o.bcv; if(o.bsp!==undefined)BUD_SPEED=o.bsp;
     if(o.wlo!==undefined)WIN_LO=o.wlo; if(o.whi!==undefined)WIN_HI=o.whi; if(o.wcv!==undefined)WIN_CURVE=o.wcv; },
   // 検証用：全 ripe 細胞の warn を w に固定（死なないよう窓を大きくして over を w*窓 に）
