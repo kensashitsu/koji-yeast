@@ -160,7 +160,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v125';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v126';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -175,7 +175,7 @@ const TIME      = 30;    // 制限時間（秒）★長さの調整はここ（v
 // 時間切れの瞬間はまだ指を振っている最中なので、そのままだと次のフリックが「もう一度」に拾われて
 // 結果を見る前に次が始まってしまう（実際に起きた）。この秒数はタップを受け付けない。
 const RESULT_WAIT = 1.4;
-const CAP       = 80;    // 上限個体数（容器がきれいに埋まる数）
+let   CAP       = 80;    // 上限個体数（容器がきれいに埋まる数）
 // リスク：熟した芽は放っておくと母細胞ごと死ぬ。切れるのは熟してから「猶予」秒だけ（winNow）。
 // ★v57：混雑ほど猶予を「長く」する（v52とは逆）。後半は的が多くて忙しいので、1本ずつに時間の余裕を
 //   持たせて緩和（ユーザー要望）。序盤(空)=WIN_LO＝短め → 満杯(混雑)=WIN_HI＝長め。占有occは死体も含む
@@ -235,6 +235,25 @@ let   ADAPT_CALM = 2.5;  // 最後の死からこれだけ経っていれば「�
 let   ADAPT_MIN_N= 10;   // ★これ未満の匹数では増やさない（序盤は的が少なくて当然＝手が余っていると誤判定するため）
 let   adaptBonus = 0;    // 従来式に上乗せしている的の数（0＝従来と同じ）
 let   adaptDead  = 0, adaptDeathT = 99;   // 死者数の直近値／最後の死からの経過
+
+// ★実機で難易度を試すためのURL上書き（例: index.html?slack=5&max=20 ／ ?adapt=0 で適応OFF）。
+//   パラメータを付けなければ何も変わらない＝既定値は上の定義のまま。
+//   効いている上書きは版数の隣に出る（どの設定で遊んだか取り違えないため）。
+//   つまみ: adapt(0/1) slack max up down calm minN ／ bhi blo bsp wlo whi ／ cap(上限個体数)
+const QS=new URLSearchParams(location.search);
+let QSNOTE='';
+function qs(k,set){ if(!QS.has(k)) return; const v=parseFloat(QS.get(k)); if(!isFinite(v)) return;
+  set(v); QSNOTE+=(QSNOTE?' ':'')+k+'='+v; }
+qs('adapt',v=>ADAPT=!!v);   qs('slack',v=>ADAPT_SLACK=v); qs('max', v=>ADAPT_MAX=v);
+qs('up',   v=>ADAPT_UP=v);  qs('down', v=>ADAPT_DOWN=v);  qs('calm',v=>ADAPT_CALM=v);
+qs('minN', v=>ADAPT_MIN_N=v);
+qs('bhi',  v=>BUD_HI=v);    qs('blo',  v=>BUD_LO=v);      qs('bsp', v=>BUD_SPEED=v);
+qs('wlo',  v=>WIN_LO=v);    qs('whi',  v=>WIN_HI=v);      qs('cap', v=>CAP=v);
+if(QSNOTE){   // 版数の隣に上書き内容を出す＝実機で「今どの設定を試しているか」を取り違えない
+  const e=document.getElementById('ver'), o=document.getElementById('ovver');
+  if(e) e.textContent=VERSION+' '+QSNOTE;
+  if(o) o.textContent=VERSION+' '+QSNOTE;
+}
 let   BUD_SPEED = 0.32;  // 1つの芽が熟す速さ（0→1/秒）。約3.1秒で切り頃。★ユーザー「もう少し早め」（0.28→0.32／0.35は速すぎた）
 // ★序盤の立ち上がりブースト（ユーザー「開始〜5匹まで増やすテンポが悪い」）。個体数が少ないほど熟すのを速め、
 //   EARLY_N 匹に達すると 1倍（＝中盤以降の難易度は一切変えない）。1匹のとき最大 (1+EARLY_BOOST) 倍。
