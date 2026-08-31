@@ -160,7 +160,7 @@
 <script>
 (()=>{
 'use strict';
-const VERSION='v126';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
+const VERSION='v127';  // ★版数。変更のたびに上げる（テスト版の取り違え防止のため画面に表示）
 document.getElementById('ver').textContent=VERSION;
 document.getElementById('ovver').textContent=VERSION;
 // ---- チューニング定数 ----
@@ -253,6 +253,43 @@ if(QSNOTE){   // 版数の隣に上書き内容を出す＝実機で「今どの
   const e=document.getElementById('ver'), o=document.getElementById('ovver');
   if(e) e.textContent=VERSION+' '+QSNOTE;
   if(o) o.textContent=VERSION+' '+QSNOTE;
+}
+
+// ★実機テスト用のプリセット選択。★?dev=1 を付けた時だけタイトルに出る＝公開版の画面は変わらない。
+//   選んだものは localStorage に残るので、実機でアプリを閉じても同じ設定で続けられる。
+//   不要になったらこのブロックごと消せば元通り（他の場所には何も足していない）。
+if(QS.get('dev')==='1'){
+  const PRESETS=[
+    {n:'基準',    adapt:1, slack:3, max:16, cap:80},
+    {n:'緩め',    adapt:1, slack:5, max:20, cap:80},
+    {n:'強め',    adapt:1, slack:7, max:24, cap:80},
+    {n:'上限110', adapt:1, slack:5, max:20, cap:110},
+    {n:'適応OFF', adapt:0, slack:3, max:16, cap:80},
+  ];
+  const row=document.createElement('div');
+  row.style.cssText='display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:12px 0 2px';
+  function applyPreset(p){
+    ADAPT=!!p.adapt; ADAPT_SLACK=p.slack; ADAPT_MAX=p.max; CAP=p.cap;
+    const lab=VERSION+' '+p.n+'（行列'+p.slack+'/的上限'+p.max+'/'+p.cap+'匹'+(p.adapt?'':'・適応OFF')+'）';
+    const e=document.getElementById('ver'), o=document.getElementById('ovver');
+    if(e) e.textContent=lab; if(o) o.textContent=lab;
+    try{ localStorage.setItem('yeastPreset',p.n); }catch(err){}
+    for(const b of row.children) b.style.background = (b.textContent===p.n)?'rgba(245,192,51,.38)':'transparent';
+  }
+  for(const p of PRESETS){
+    const b=document.createElement('button');
+    b.textContent=p.n;
+    b.style.cssText='font:inherit;font-size:11.5px;padding:6px 11px;border-radius:999px;'+
+      'border:1px solid rgba(122,80,20,.35);background:transparent;color:inherit;cursor:pointer';
+    b.addEventListener('click',()=>applyPreset(p));
+    row.appendChild(b);
+  }
+  document.getElementById('ov').insertBefore(row, document.getElementById('ovver'));
+  // URLで個別のつまみを指定していた場合はそちらを尊重する（プリセットで上書きしない）
+  if(!QSNOTE){
+    let saved=null; try{ saved=localStorage.getItem('yeastPreset'); }catch(err){}
+    applyPreset(PRESETS.find(p=>p.n===saved)||PRESETS[0]);
+  }
 }
 let   BUD_SPEED = 0.32;  // 1つの芽が熟す速さ（0→1/秒）。約3.1秒で切り頃。★ユーザー「もう少し早め」（0.28→0.32／0.35は速すぎた）
 // ★序盤の立ち上がりブースト（ユーザー「開始〜5匹まで増やすテンポが悪い」）。個体数が少ないほど熟すのを速め、
